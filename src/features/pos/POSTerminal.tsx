@@ -38,6 +38,8 @@ interface Item {
   stock_actual: number;
   inventariable?: boolean;
   vista_stock_kits?: any;
+  item_presentaciones?: { nombre: string; precio_venta: number; stock_actual: number; stock_minimo: number; inventariable: boolean }[];
+  moneda?: string | null;
 }
 
 interface Attention {
@@ -254,8 +256,10 @@ export const POSTerminal: React.FC = () => {
     }
   }, [activeAttention?.id]);
 
+  const getCartKey = (itemId: string, presNombre?: string) => presNombre ? `${itemId}::${presNombre}` : itemId;
+
   const getActiveCart = (): CartItem[] => activeAttention?.cart || [];
-  const getActiveCartTotal = () => getActiveCart().reduce((sum, c) => sum + (c.cantidad * c.item.precio_venta), 0);
+  const getActiveCartTotal = () => getActiveCart().reduce((sum, c) => sum + (c.cantidad * (c.precioUnitario ?? c.item.precio_venta)), 0);
 
   const updateAttention = (attentionId: string, updates: Partial<Attention>) => {
     setAttentions(prev => prev.map(a => a.id === attentionId ? { ...a, ...updates } : a));
@@ -435,7 +439,7 @@ export const POSTerminal: React.FC = () => {
 
       const { data: itemsData, error: itemsError } = await supabase
         .from('items')
-        .select('*')
+        .select('*, item_presentaciones(*)')
         .in('sucursal_id', impersonating ? activeBranchIds : [profile?.sucursal_id])
         .order('creado_en', { ascending: false });
 
@@ -492,13 +496,20 @@ export const POSTerminal: React.FC = () => {
     }
   };
 
-  const addToCart = (item: Item) => {
+  const addToCart = (item: Item, presentacionNombre?: string) => {
     const attention = getOrCreateAttention();
     const currentCart = attention.cart;
-    const existing = currentCart.find(c => c.item.id === item.id);
+    const cartKey = getCartKey(item.id, presentacionNombre);
+    const existing = currentCart.find(c => getCartKey(c.item.id, c.presentacionNombre) === cartKey);
     const currentQty = existing ? existing.cantidad : 0;
 
-    if (item.tipo === 'producto' && item.inventariable !== false) {
+    if (presentacionNombre) {
+      const pres = item.item_presentaciones?.find(p => p.nombre === presentacionNombre);
+      if (pres && pres.inventariable && currentQty >= pres.stock_actual) {
+        alert(lang === 'es' ? 'No hay suficiente inventario disponible.' : 'Not enough stock available.');
+        return;
+      }
+    } else if (item.tipo === 'producto' && item.inventariable !== false) {
       if (currentQty >= item.stock_actual) {
         alert(lang === 'es' ? 'No hay suficiente inventario disponible.' : 'Not enough stock available.');
         return;
@@ -513,27 +524,39 @@ export const POSTerminal: React.FC = () => {
 
     let newCart: CartItem[];
     if (existing) {
-      newCart = currentCart.map(c => c.item.id === item.id ? { ...c, cantidad: c.cantidad + 1 } : c);
+      newCart = currentCart.map(c => getCartKey(c.item.id, c.presentacionNombre) === cartKey ? { ...c, cantidad: c.cantidad + 1 } : c);
     } else {
-      newCart = [...currentCart, { item, cantidad: 1 }];
+      const pres = item.item_presentaciones?.find(p => p.nombre === presentacionNombre);
+      newCart = [...currentCart, {
+        item,
+        cantidad: 1,
+        presentacionNombre,
+        precioUnitario: pres?.precio_venta,
+      }];
     }
     updateAttention(attention.id, { cart: newCart });
   };
 
-  const updateCartQty = (itemId: string, delta: number) => {
+  const updateCartQty = (cartKey: string, delta: number) => {
     if (!activeAttention) return;
     const currentCart = activeAttention.cart;
-    const existing = currentCart.find(c => c.item.id === itemId);
+    const existing = currentCart.find(c => getCartKey(c.item.id, c.presentacionNombre) === cartKey);
     if (!existing) return;
 
     const newQty = existing.cantidad + delta;
     if (newQty <= 0) {
-      updateAttention(activeAttention.id, { cart: currentCart.filter(c => c.item.id !== itemId) });
+      updateAttention(activeAttention.id, { cart: currentCart.filter(c => getCartKey(c.item.id, c.presentacionNombre) !== cartKey) });
       return;
     }
 
     if (delta > 0) {
-      if (existing.item.tipo === 'producto' && existing.item.inventariable !== false) {
+      if (existing.presentacionNombre) {
+        const pres = existing.item.item_presentaciones?.find(p => p.nombre === existing.presentacionNombre);
+        if (pres && pres.inventariable && newQty > pres.stock_actual) {
+          alert(lang === 'es' ? 'No hay suficiente inventario disponible.' : 'Not enough stock available.');
+          return;
+        }
+      } else if (existing.item.tipo === 'producto' && existing.item.inventariable !== false) {
         if (newQty > existing.item.stock_actual) {
           alert(lang === 'es' ? 'No hay suficiente inventario disponible.' : 'Not enough stock available.');
           return;
@@ -547,12 +570,12 @@ export const POSTerminal: React.FC = () => {
       }
     }
 
-    updateAttention(activeAttention.id, { cart: currentCart.map(c => c.item.id === itemId ? { ...c, cantidad: newQty } : c) });
+    updateAttention(activeAttention.id, { cart: currentCart.map(c => getCartKey(c.item.id, c.presentacionNombre) === cartKey ? { ...c, cantidad: newQty } : c) });
   };
 
-  const removeFromCart = (itemId: string) => {
+  const removeFromCart = (cartKey: string) => {
     if (!activeAttention) return;
-    updateAttention(activeAttention.id, { cart: activeAttention.cart.filter(c => c.item.id !== itemId) });
+    updateAttention(activeAttention.id, { cart: activeAttention.cart.filter(c => getCartKey(c.item.id, c.presentacionNombre) !== cartKey) });
   };
 
   const getCartTotal = () => getActiveCartTotal();
@@ -600,7 +623,8 @@ export const POSTerminal: React.FC = () => {
     const saleItems = activeCart.map(c => ({
       item_id: c.item.id,
       cantidad: c.cantidad,
-      precio_unitario: c.item.precio_venta
+      precio_unitario: c.precioUnitario ?? c.item.precio_venta,
+      presentacion_nombre: c.presentacionNombre || null,
     }));
 
     // Formatear pagos para la RPC deduciendo el vuelto de la línea de efectivo
@@ -715,7 +739,7 @@ export const POSTerminal: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
+    <div className="h-dvh bg-slate-50 text-slate-800 flex flex-col">
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm z-30">
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="Aura" className="w-8 h-8 object-contain rounded-lg" />
@@ -873,7 +897,7 @@ export const POSTerminal: React.FC = () => {
 
           <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
             {/* Catalog Panel — visible on lg+ or when mobile tab is 'catalog' */}
-            <div className={`${activeMobileTab === 'catalog' ? 'flex' : 'hidden'} lg:flex flex-1`}>
+            <div className={`${activeMobileTab === 'catalog' ? 'flex' : 'hidden'} lg:flex flex-1 h-full`}>
               <CatalogPanel
                 loadingCatalog={loadingCatalog}
                 searchTerm={searchTerm}
@@ -889,7 +913,7 @@ export const POSTerminal: React.FC = () => {
             </div>
 
             {/* Cart Panel — visible on lg+ or when mobile tab is 'cart' */}
-            <div className={`${activeMobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex`}>
+            <div className={`${activeMobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex h-full`}>
               <CartPanel
                 cart={getActiveCart()}
                 t={t}

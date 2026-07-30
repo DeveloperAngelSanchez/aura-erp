@@ -21,12 +21,17 @@ interface Item {
   inventariable?: boolean;
   vista_stock_kits?: any;
   moneda?: string | null;
+  item_presentaciones?: { nombre: string; precio_venta: number; stock_actual: number; inventariable: boolean }[];
 }
 
 export interface CartItem {
   item: Item;
   cantidad: number;
+  presentacionNombre?: string;
+  precioUnitario?: number;
 }
+
+const getCartKey = (item: CartItem) => item.item.id + (item.presentacionNombre ? '::' + item.presentacionNombre : '');
 
 interface CartPanelProps {
   cart: CartItem[];
@@ -34,8 +39,8 @@ interface CartPanelProps {
   processingSale: boolean;
   saleSuccessMessage: string | null;
   getCartTotal: () => number;
-  updateCartQty: (itemId: string, delta: number) => void;
-  removeFromCart: (itemId: string) => void;
+  updateCartQty: (cartKey: string, delta: number) => void;
+  removeFromCart: (cartKey: string) => void;
   handleCheckout: () => void;
   barberos: any[];
   selectedBarberoId: string;
@@ -100,39 +105,45 @@ export const CartPanel: React.FC<CartPanelProps> = ({
           </div>
         ) : (
           <div className="space-y-3 divide-y divide-slate-100">
-            {cart.map((cartItem, idx) => (
-              <div key={cartItem.item.id} className={`flex gap-3 items-center ${idx > 0 ? 'pt-3' : ''}`}>
+            {cart.map((cartItem, idx) => {
+              const key = getCartKey(cartItem);
+              return (
+              <div key={key} className={`flex gap-3 items-center ${idx > 0 ? 'pt-3' : ''}`}>
                 <div className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-150 flex items-center justify-center shadow-sm">
                   {getItemIcon(cartItem.item.tipo)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="text-xs font-bold text-slate-800 truncate">{cartItem.item.nombre}</h4>
-                  <p className="text-[10px] text-slate-400 font-mono font-bold">{formatMoney(cartItem.item.precio_venta, cartItem.item.moneda || undefined)}</p>
+                  <p className="text-[10px] text-slate-400 font-mono font-bold">
+                    {cartItem.presentacionNombre && <span className="text-slate-500">{cartItem.presentacionNombre} · </span>}
+                    {formatMoney(cartItem.precioUnitario ?? cartItem.item.precio_venta, cartItem.item.moneda || undefined)}
+                  </p>
                 </div>
 
                 <div className="flex items-center border border-slate-200 rounded-lg shadow-sm bg-slate-50">
-                  <button onClick={() => updateCartQty(cartItem.item.id, -1)}
+                  <button onClick={() => updateCartQty(key, -1)}
                     className="p-1 hover:bg-slate-200 text-slate-500 rounded-l-lg transition-colors cursor-pointer">
                     <Minus className="w-3 h-3" />
                   </button>
                   <span className="px-2.5 text-xs font-bold text-slate-800 font-mono">{cartItem.cantidad}</span>
-                  <button onClick={() => updateCartQty(cartItem.item.id, 1)}
+                  <button onClick={() => updateCartQty(key, 1)}
                     className="p-1 hover:bg-slate-200 text-slate-500 rounded-r-lg transition-colors cursor-pointer">
                     <Plus className="w-3 h-3" />
                   </button>
                 </div>
 
-                <button onClick={() => removeFromCart(cartItem.item.id)}
+                <button onClick={() => removeFromCart(key)}
                   className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-50 rounded-lg transition-colors">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
-      <div className="bg-slate-50 border-t border-slate-200 p-6 space-y-4">
+      <div className="bg-slate-50 border-t border-slate-200 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] space-y-4">
         <div className="space-y-1.5">
           <div className="flex justify-between text-xs text-slate-500 font-medium">
             <span>{t.subtotal}</span>

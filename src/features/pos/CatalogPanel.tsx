@@ -11,6 +11,7 @@ interface Item {
   inventariable?: boolean;
   vista_stock_kits?: any;
   moneda?: string | null;
+  item_presentaciones?: { nombre: string; precio_venta: number; stock_actual: number; stock_minimo: number; inventariable: boolean }[];
 }
 
 interface CatalogPanelProps {
@@ -21,7 +22,7 @@ interface CatalogPanelProps {
   setSelectedCategory: (cat: 'all' | 'producto' | 'servicio' | 'kit') => void;
   t: Record<string, string>;
   lang: string;
-  addToCart: (item: Item) => void;
+  addToCart: (item: Item, presentacionNombre?: string) => void;
   filteredCatalog: Item[];
   getStockLabel: (item: Item) => string;
 }
@@ -76,7 +77,43 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredCatalog.map((item) => {
+          {filteredCatalog.flatMap((item) => {
+            const pres = item.item_presentaciones;
+            if (pres && pres.length > 0) {
+              return pres.map((p) => {
+                const isOutOfStock = item.tipo === 'producto' && p.inventariable && p.stock_actual <= 0;
+                return (
+                  <div key={`${item.id}::${p.nombre}`}
+                    className={`bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between space-y-4 hover:shadow-md transition-all duration-200 ${isOutOfStock ? 'opacity-65' : ''}`}>
+                    <div className="space-y-2">
+                      <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-150 flex items-center justify-center shadow-sm">
+                        {getItemIcon(item.tipo)}
+                      </div>
+                      <div className="space-y-0.5">
+                        <h3 className="font-bold text-slate-900 text-xs tracking-tight line-clamp-2 min-h-[32px]">{item.nombre} — {p.nombre}</h3>
+                        <span className={`text-[9px] font-bold uppercase tracking-wider block ${item.tipo === 'producto' ? 'text-emerald-600' : 'text-purple-600'}`}>
+                          {item.tipo === 'producto' && p.inventariable
+                            ? (p.stock_actual > 0 ? `${p.stock_actual} ${t.inStock}` : t.outOfStock)
+                            : (lang === 'es' ? 'Ilimitado' : 'Unlimited')}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                      <span className="font-extrabold text-slate-950 font-mono text-sm">
+                        {formatMoney(p.precio_venta, item.moneda || undefined)}
+                      </span>
+                      <button onClick={() => addToCart(item, p.nombre)} disabled={isOutOfStock}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${isOutOfStock
+                          ? 'bg-rose-50 border border-rose-100 text-rose-500 cursor-not-allowed'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'}`}>
+                        {isOutOfStock ? t.outOfStock : `+ ${lang === 'es' ? 'Añadir' : 'Add'}`}
+                      </button>
+                    </div>
+                  </div>
+                );
+              });
+            }
+
             const stock = item.tipo === 'kit'
               ? (item.vista_stock_kits?.stock_calculado ?? 0)
               : item.stock_actual;
@@ -84,18 +121,14 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
 
             return (
               <div key={item.id}
-                className={`bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between space-y-4 hover:shadow-md transition-all duration-200 ${
-                  isOutOfStock ? 'opacity-65' : ''
-                }`}>
+                className={`bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between space-y-4 hover:shadow-md transition-all duration-200 ${isOutOfStock ? 'opacity-65' : ''}`}>
                 <div className="space-y-2">
                   <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-150 flex items-center justify-center shadow-sm">
                     {getItemIcon(item.tipo)}
                   </div>
                   <div className="space-y-0.5">
                     <h3 className="font-bold text-slate-900 text-xs tracking-tight line-clamp-2 min-h-[32px]">{item.nombre}</h3>
-                    <span className={`text-[9px] font-bold uppercase tracking-wider ${
-                      item.tipo === 'producto' ? 'text-emerald-600' : item.tipo === 'servicio' ? 'text-purple-600' : 'text-blue-600'
-                    }`}>
+                    <span className={`text-[9px] font-bold uppercase tracking-wider ${item.tipo === 'producto' ? 'text-emerald-600' : item.tipo === 'servicio' ? 'text-purple-600' : 'text-blue-600'}`}>
                       {getStockLabel(item)}
                     </span>
                   </div>
@@ -105,11 +138,9 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
                     {formatMoney(item.precio_venta, item.moneda || undefined)}
                   </span>
                   <button onClick={() => addToCart(item)} disabled={isOutOfStock}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                      isOutOfStock
-                        ? 'bg-rose-50 border border-rose-100 text-rose-500 cursor-not-allowed'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
-                    }`}>
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${isOutOfStock
+                      ? 'bg-rose-50 border border-rose-100 text-rose-500 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'}`}>
                     {isOutOfStock ? t.outOfStock : `+ ${lang === 'es' ? 'Añadir' : 'Add'}`}
                   </button>
                 </div>

@@ -9,6 +9,7 @@ import { AdminLayout } from '../components/AdminLayout.tsx';
 import { CatalogManager } from '../features/catalog/CatalogManager.tsx';
 import { PurchaseManager } from '../features/purchases/PurchaseManager.tsx';
 import { SalesReport } from '../features/reports/SalesReport.tsx';
+import { CloseReport } from '../features/reports/CloseReport.tsx';
 import { POSTerminal } from '../features/pos/POSTerminal.tsx';
 import { SettingsManager } from '../features/settings/SettingsManager.tsx';
 import { InventoryManager } from '../features/inventory/InventoryManager.tsx';
@@ -21,7 +22,6 @@ import { CloseTurnPage } from '../features/cash/CloseTurnPage.tsx';
 export const AppRoutes: React.FC = () => {
   const { user, profile } = useAuth();
 
-  // Root redirect helper based on roles
   const getRedirectPath = () => {
     if (!profile) return '/login';
     if (profile.rol_sistema === 'sistema_admin') return '/admin';
@@ -33,7 +33,6 @@ export const AppRoutes: React.FC = () => {
 
   return (
     <Routes>
-      {/* Public Routes */}
       <Route 
         path="/login" 
         element={user ? <Navigate to={getRedirectPath()} replace /> : <Login />} 
@@ -43,7 +42,6 @@ export const AppRoutes: React.FC = () => {
         element={user ? <Navigate to={getRedirectPath()} replace /> : <ResetPassword />} 
       />
 
-      {/* Protected Admin Routes (with Layout and Sidebar) */}
       <Route 
         path="/admin" 
         element={
@@ -56,7 +54,9 @@ export const AppRoutes: React.FC = () => {
         <Route path="catalog" element={<CatalogManager />} />
         <Route path="purchases" element={<PurchaseManager />} />
         <Route path="compras" element={<PurchaseManager />} />
-        <Route path="reports" element={<SalesReport />} />
+        <Route path="reports" element={<Navigate to="ventas" replace />} />
+        <Route path="reports/ventas" element={<SalesReport />} />
+        <Route path="reports/turnos" element={<CloseReport />} />
         <Route path="settings" element={<SettingsManager />} />
         <Route path="inventory" element={<InventoryManager />} />
         <Route path="empresas" element={<EmpresaManager />} />
@@ -65,7 +65,6 @@ export const AppRoutes: React.FC = () => {
         <Route path="customers" element={<CustomerManager />} />
       </Route>
 
-      {/* Other Protected Routes by Role */}
       <Route 
         path="/pos" 
         element={
@@ -91,7 +90,6 @@ export const AppRoutes: React.FC = () => {
         } 
       />
 
-      {/* Fallback Catch All */}
       <Route 
         path="*" 
         element={<Navigate to={user ? getRedirectPath() : '/login'} replace />} 

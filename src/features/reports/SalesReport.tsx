@@ -18,8 +18,10 @@ import {
   User,
   ChevronLeft,
   ChevronRight,
+  Edit3,
 } from 'lucide-react';
 import { AnulationModal } from '../sales/AnulationModal';
+import { EditSaleModal } from '../sales/EditSaleModal';
 
 interface SaleRecord {
   id: string;
@@ -165,8 +167,10 @@ export const SalesReport: React.FC = () => {
   const [monthTotal, setMonthTotal] = useState(0);
 
   const [anulationTarget, setAnulationTarget] = useState<{ id: string; total: number } | null>(null);
+  const [editingSale, setEditingSale] = useState<SaleRecord | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const canAnular = usePermission('anular_venta');
+  const isAdmin = profile?.rol === 'admin';
 
   // Resizable column widths with localStorage persistence
   const { columnWidths, handleMouseDown } = useResizableColumns<ReportCol>(initialReportColWidths, 'col_widths_sales_report');
@@ -501,15 +505,26 @@ export const SalesReport: React.FC = () => {
                       </td>
                       <td className="px-3 py-3 text-right font-mono font-bold text-blue-600 truncate">{formatMoney(sale.total, sale.moneda || undefined)}</td>
                       <td className="px-3 py-3 text-center">
-                        {canAnular && (
-                          <button
-                            onClick={() => setAnulationTarget({ id: sale.id, total: sale.total })}
-                            className="p-1.5 text-rose-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                            title={lang === 'es' ? 'Anular venta' : 'Annul sale'}
-                          >
-                            <XCircle className="w-4 h-4" />
-                          </button>
-                        )}
+                        <div className="flex items-center justify-center gap-1">
+                          {isAdmin && (
+                            <button
+                              onClick={() => setEditingSale(sale)}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
+                              title={lang === 'es' ? 'Editar venta' : 'Edit sale'}
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canAnular && (
+                            <button
+                              onClick={() => setAnulationTarget({ id: sale.id, total: sale.total })}
+                              className="p-1.5 text-rose-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                              title={lang === 'es' ? 'Anular venta' : 'Annul sale'}
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -549,6 +564,17 @@ export const SalesReport: React.FC = () => {
         )}
       </div>
 
+      {editingSale && (
+        <EditSaleModal
+          sale={editingSale}
+          onClose={() => setEditingSale(null)}
+          onSuccess={(msg) => {
+            setSuccessMessage(msg);
+            handleFilter();
+            setTimeout(() => setSuccessMessage(null), 4000);
+          }}
+        />
+      )}
       {anulationTarget && (
         <AnulationModal
           saleId={anulationTarget.id}

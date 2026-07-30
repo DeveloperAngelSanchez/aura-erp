@@ -38,6 +38,7 @@ import {
   Coins,
   Boxes,
   Sliders,
+  Layers,
 } from 'lucide-react';
 
 interface Item {
@@ -56,6 +57,25 @@ interface Item {
   comisionable?: boolean;
   creado_en: string;
   vista_stock_kits?: any;
+  item_presentaciones?: PresentacionRecord[];
+}
+
+interface PresentacionRecord {
+  id: string;
+  item_id: string;
+  nombre: string;
+  precio_venta: number;
+  stock_actual: number;
+  stock_minimo: number;
+  inventariable: boolean;
+}
+
+interface PresentacionInput {
+  nombre: string;
+  precio: string;
+  stock: string;
+  stockMin: string;
+  inventariable: boolean;
 }
 
 interface ComponentInput {
@@ -103,6 +123,16 @@ const translations = {
     modalAddComponent: 'Agregar Producto al Kit',
     modalComponentLabel: 'Producto componente',
     modalQuantityLabel: 'Cantidad requerida',
+    modalPresentaciones: 'Presentaciones / Variantes',
+    hasPresentaciones: '¿Tiene variantes de precio?',
+    hasPresentacionesDesc: 'Al activar, las variantes se mostrarán en POS en lugar del item base. Cada variante define su propio precio y stock.',
+    presName: 'Nombre de la variante',
+    presPrice: 'Precio',
+    presStock: 'Stock',
+    presStockMin: 'Stock Mín',
+    presInventariable: 'Controlar stock',
+    addPresentacion: 'Agregar Variante',
+    noPresentaciones: 'No hay variantes configuradas. Agrega al menos una.',
     cancel: 'Cancelar',
     save: 'Guardar',
     noItems: 'No se encontraron items en el catálogo.',
@@ -148,6 +178,16 @@ const translations = {
     modalAddComponent: 'Add Product to Kit',
     modalComponentLabel: 'Component product',
     modalQuantityLabel: 'Required quantity',
+    modalPresentaciones: 'Presentations / Variants',
+    hasPresentaciones: 'Has price variants?',
+    hasPresentacionesDesc: 'When enabled, variants will show in POS instead of the base item. Each variant defines its own price and stock.',
+    presName: 'Variant name',
+    presPrice: 'Price',
+    presStock: 'Stock',
+    presStockMin: 'Min Stock',
+    presInventariable: 'Track stock',
+    addPresentacion: 'Add Variant',
+    noPresentaciones: 'No variants configured. Add at least one.',
     cancel: 'Cancel',
     save: 'Save',
     noItems: 'No items found in the catalog.',
@@ -192,6 +232,8 @@ export const CatalogManager: React.FC = () => {
   const [precioCosto, setPrecioCosto] = useState('0');
   const [fotoUrl, setFotoUrl] = useState('');
   const [itemMoneda, setItemMoneda] = useState('S/.');
+  const [hasPresentaciones, setHasPresentaciones] = useState(false);
+  const [presentaciones, setPresentaciones] = useState<PresentacionInput[]>([]);
   
   const [kitComponents, setKitComponents] = useState<ComponentInput[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
@@ -204,7 +246,7 @@ export const CatalogManager: React.FC = () => {
       // 1. Fetch items
       const { data: itemsData, error: itemsError } = await supabase
         .from('items')
-        .select('*')
+        .select('*, item_presentaciones(*)')
         .in('sucursal_id', impersonating ? activeBranchIds : [profile?.sucursal_id])
         .order('creado_en', { ascending: false });
 
@@ -292,6 +334,24 @@ export const CatalogManager: React.FC = () => {
     setItemMoneda(item.moneda || config.moneda_simbolo || 'S/.');
     setFormError(null);
 
+    // Load presentations
+    const pres = (item as any).item_presentaciones;
+    if (pres && pres.length > 0) {
+      setHasPresentaciones(true);
+      setPresentaciones(
+        pres.map((p: any) => ({
+          nombre: p.nombre,
+          precio: p.precio_venta.toString(),
+          stock: p.stock_actual.toString(),
+          stockMin: p.stock_minimo.toString(),
+          inventariable: p.inventariable,
+        }))
+      );
+    } else {
+      setHasPresentaciones(false);
+      setPresentaciones([]);
+    }
+
     // Load kit components if it is a kit
     if (item.tipo === 'kit') {
       try {
@@ -339,13 +399,13 @@ export const CatalogManager: React.FC = () => {
           .update({
             nombre,
             tipo,
-            precio_venta: price,
-            stock_actual: stock,
-            stock_minimo: minStock,
+            precio_venta: hasPresentaciones && presentaciones.length > 0 ? parseFloat(presentaciones[0].precio) : price,
+            stock_actual: hasPresentaciones ? 0 : stock,
+            stock_minimo: hasPresentaciones ? 0 : minStock,
             precio_costo: cost,
             foto_url: url,
             moneda: itemMoneda,
-            inventariable: isInventariable,
+            inventariable: hasPresentaciones ? false : isInventariable,
             comisionable: comisionable
           })
           .eq('id', editingItemId);
@@ -366,6 +426,21 @@ export const CatalogManager: React.FC = () => {
           }
         }
 
+        // Sync presentations: delete old, insert new
+        await supabase.from('item_presentaciones').delete().eq('item_id', editingItemId);
+        if (hasPresentaciones && presentaciones.length > 0) {
+          const presRows = presentaciones.map((p) => ({
+            item_id: editingItemId,
+            nombre: p.nombre,
+            precio_venta: parseFloat(p.precio),
+            stock_actual: p.inventariable ? parseInt(p.stock) || 0 : 0,
+            stock_minimo: p.inventariable ? parseInt(p.stockMin) || 0 : 0,
+            inventariable: p.inventariable,
+          }));
+          const { error: presError } = await supabase.from('item_presentaciones').insert(presRows);
+          if (presError) throw presError;
+        }
+
         setSuccess(t.updatedSuccess);
       } else {
         // ── CREATE MODE ──
@@ -376,20 +451,33 @@ export const CatalogManager: React.FC = () => {
             sucursal_id: targetBranchId,
             nombre,
             tipo,
-            precio_venta: price,
+            precio_venta: hasPresentaciones && presentaciones.length > 0 ? parseFloat(presentaciones[0].precio) : price,
             stock_actual: stock,
             stock_inicial: stock,
             stock_minimo: minStock,
             precio_costo: cost,
             foto_url: url,
             moneda: itemMoneda,
-            inventariable: isInventariable,
+            inventariable: hasPresentaciones ? false : isInventariable,
             comisionable: comisionable
           })
           .select()
           .single();
 
         if (insertError) throw insertError;
+
+        if (hasPresentaciones && presentaciones.length > 0) {
+          const presRows = presentaciones.map((p) => ({
+            item_id: insertedItem.id,
+            nombre: p.nombre,
+            precio_venta: parseFloat(p.precio),
+            stock_actual: p.inventariable ? parseInt(p.stock) || 0 : 0,
+            stock_minimo: p.inventariable ? parseInt(p.stockMin) || 0 : 0,
+            inventariable: p.inventariable,
+          }));
+          const { error: presError } = await supabase.from('item_presentaciones').insert(presRows);
+          if (presError) throw presError;
+        }
 
         if (tipo === 'kit' && kitComponents.length > 0) {
           const compositions = kitComponents.map((comp) => ({
@@ -446,6 +534,8 @@ export const CatalogManager: React.FC = () => {
     setPrecioCosto('0');
     setFotoUrl('');
     setItemMoneda(config.moneda_simbolo || 'S/.');
+    setHasPresentaciones(false);
+    setPresentaciones([]);
     setKitComponents([]);
     setFormError(null);
   };
@@ -900,8 +990,8 @@ export const CatalogManager: React.FC = () => {
                   </h3>
 
                   <div className="space-y-3">
-                    {/* Toggle 1: Inventariable (Only for producto and kit) */}
-                    {(tipo === 'producto' || tipo === 'kit') && (
+                    {/* Toggle 1: Inventariable (Only for producto and kit; hidden when presentations are active) */}
+                    {(tipo === 'producto' || tipo === 'kit') && !hasPresentaciones && (
                       <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 transition-all">
                         <div className="space-y-0.5 max-w-[78%]">
                           <div className="flex items-center gap-2">
@@ -965,8 +1055,8 @@ export const CatalogManager: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Section 4: Stock Details (Product + Inventariable) */}
-                {tipo === 'producto' && inventariable && (
+                {/* Section 4: Stock Details (Product + Inventariable; hidden with presentations) */}
+                {tipo === 'producto' && inventariable && !hasPresentaciones && (
                   <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-4 animate-in fade-in duration-200">
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-2">
                       <Boxes className="w-3.5 h-3.5 text-blue-600" />
@@ -1004,7 +1094,163 @@ export const CatalogManager: React.FC = () => {
                   </div>
                 )}
 
-                {/* Section 5: Kit Components */}
+                {/* Section 5: Presentations / Variants */}
+                {(tipo === 'producto' || tipo === 'servicio') && (
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-4 animate-in fade-in duration-200">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                        <Layers className="w-3.5 h-3.5 text-blue-600" />
+                        <span>{t.modalPresentaciones}</span>
+                      </h3>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={hasPresentaciones}
+                          onChange={(e) => {
+                            setHasPresentaciones(e.target.checked);
+                            if (!e.target.checked) setPresentaciones([]);
+                          }}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
+
+                    {hasPresentaciones ? (
+                      <>
+                        <p className="text-[11px] text-slate-500 leading-tight">{t.hasPresentacionesDesc}</p>
+                        {presentaciones.length === 0 ? (
+                          <p className="text-xs text-slate-400 italic text-center py-3">{t.noPresentaciones}</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {presentaciones.map((pres, idx) => (
+                              <div key={idx} className="flex gap-2 items-start bg-slate-50 p-3 rounded-xl border border-slate-200 shadow-2xs flex-wrap">
+                                <div className="flex-1 min-w-[120px] space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase block">{t.presName}</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Ej. Clásico, Premium"
+                                    value={pres.nombre}
+                                    onChange={(e) => {
+                                      const next = [...presentaciones];
+                                      next[idx] = { ...next[idx], nombre: e.target.value };
+                                      setPresentaciones(next);
+                                    }}
+                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-blue-500 shadow-2xs font-medium"
+                                  />
+                                </div>
+                                <div className="w-24 space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase block">{t.presPrice}</label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    value={pres.precio}
+                                    onChange={(e) => {
+                                      const next = [...presentaciones];
+                                      next[idx] = { ...next[idx], precio: e.target.value };
+                                      setPresentaciones(next);
+                                    }}
+                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs text-center font-mono font-bold shadow-2xs"
+                                  />
+                                </div>
+                                {tipo === 'producto' && (
+                                  <>
+                                    {pres.inventariable && (
+                                      <>
+                                        <div className="w-20 space-y-1">
+                                          <label className="text-[10px] font-bold text-slate-400 uppercase block">{t.presStock}</label>
+                                          <input
+                                            type="number"
+                                            placeholder="0"
+                                            value={pres.stock}
+                                            onChange={(e) => {
+                                              const next = [...presentaciones];
+                                              next[idx] = { ...next[idx], stock: e.target.value };
+                                              setPresentaciones(next);
+                                            }}
+                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs text-center font-mono font-bold shadow-2xs"
+                                          />
+                                        </div>
+                                        <div className="w-20 space-y-1">
+                                          <label className="text-[10px] font-bold text-slate-400 uppercase block">{t.presStockMin}</label>
+                                          <input
+                                            type="number"
+                                            placeholder="0"
+                                            value={pres.stockMin}
+                                            onChange={(e) => {
+                                              const next = [...presentaciones];
+                                              next[idx] = { ...next[idx], stockMin: e.target.value };
+                                              setPresentaciones(next);
+                                            }}
+                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs text-center font-mono font-bold shadow-2xs"
+                                          />
+                                        </div>
+                                      </>
+                                    )}
+                                    <div className={`flex items-center gap-2 ${pres.inventariable ? 'pt-5' : 'pt-0 self-center'}`}>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const next = [...presentaciones];
+                                          next[idx] = { ...next[idx], inventariable: !next[idx].inventariable };
+                                          setPresentaciones(next);
+                                        }}
+                                        className={`relative w-12 h-6 rounded-full transition-all shrink-0 border ${
+                                          pres.inventariable
+                                            ? 'bg-emerald-500 border-emerald-600 shadow-sm'
+                                            : 'bg-slate-200 border-slate-300'
+                                        }`}
+                                      >
+                                        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-all duration-200 ${
+                                          pres.inventariable ? 'left-[26px]' : 'left-[2px]'
+                                        }`} />
+                                      </button>
+                                      <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                                        pres.inventariable ? 'text-emerald-700' : 'text-slate-400'
+                                      }`}>
+                                        {pres.inventariable ? (lang === 'es' ? 'Control Stock' : 'Track Stock') : (lang === 'es' ? 'Sin Stock' : 'No Stock')}
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = presentaciones.filter((_, i) => i !== idx);
+                                    setPresentaciones(next);
+                                  }}
+                                  className="p-2 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-colors mt-4"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPresentaciones([
+                              ...presentaciones,
+                              { nombre: '', precio: '', stock: '0', stockMin: '0', inventariable: tipo === 'producto' },
+                            ])
+                          }
+                          className="w-full py-2 border-2 border-dashed border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 rounded-xl text-xs font-bold text-slate-500 hover:text-blue-700 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{t.addPresentacion}</span>
+                        </button>
+                      </>
+                    ) : (
+                      <p className="text-[11px] text-slate-400 italic">
+                        {lang === 'es' ? 'Desactiva esta opción si el item tiene un solo precio.' : 'Keep disabled if this item has a single price.'}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Section 6: Kit Components */}
                 {tipo === 'kit' && (
                   <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-4 animate-in fade-in duration-200">
                     <div className="flex justify-between items-center border-b border-slate-100 pb-2">
