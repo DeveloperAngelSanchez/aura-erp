@@ -44,9 +44,6 @@ const ITEMS_PER_PAGE = 25;
 const translations = {
   es: {
     title: 'Reporte de Ventas e Ingresos',
-    todaySales: 'Ventas de Hoy',
-    weekSales: 'Ventas de Esta Semana',
-    monthSales: 'Ventas de Este Mes',
     from: 'Desde',
     to: 'Hasta',
     filter: 'Filtrar',
@@ -66,12 +63,12 @@ const translations = {
     cash: 'Efectivo',
     card: 'Tarjeta',
     transfer: 'Transferencia',
+    totalPeriod: 'Total de ventas del período',
+    countPeriod: 'Ventas en el período',
+    avgTicket: 'Ticket promedio',
   },
   en: {
     title: 'Sales & Revenue Report',
-    todaySales: "Today's Sales",
-    weekSales: 'This Week Sales',
-    monthSales: 'This Month Sales',
     from: 'From',
     to: 'To',
     filter: 'Filter',
@@ -91,6 +88,9 @@ const translations = {
     cash: 'Cash',
     card: 'Card',
     transfer: 'Transfer',
+    totalPeriod: 'Total sales for the period',
+    countPeriod: 'Sales in the period',
+    avgTicket: 'Average ticket',
   }
 };
 
@@ -117,6 +117,11 @@ const getMonthRange = () => {
 const formatDate = (iso: string) => {
   const d = new Date(iso);
   return d.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+const formatShortDate = (iso: string) => {
+  const d = new Date(`${iso}T00:00:00`);
+  return d.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
 const methodColors: Record<string, string> = {
@@ -157,14 +162,16 @@ export const SalesReport: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'diario' | 'semanal' | 'mensual' | 'mas'>('diario');
   const [dateFrom, setDateFrom] = useState(today.start);
   const [dateTo, setDateTo] = useState(today.end);
+  const [appliedRange, setAppliedRange] = useState<{ from: string; to: string }>({
+    from: today.start,
+    to: today.end,
+  });
 
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [todayTotal, setTodayTotal] = useState(0);
-  const [weekTotal, setWeekTotal] = useState(0);
-  const [monthTotal, setMonthTotal] = useState(0);
+  const [summary, setSummary] = useState({ total: 0, count: 0, average: 0 });
 
   const [anulationTarget, setAnulationTarget] = useState<{ id: string; total: number } | null>(null);
   const [editingSale, setEditingSale] = useState<SaleRecord | null>(null);
@@ -189,6 +196,15 @@ export const SalesReport: React.FC = () => {
 
       if (error) throw error;
       setSales(data || []);
+      setAppliedRange({ from, to });
+
+      const totals = (data || []).map((s) => parseFloat(s.total) || 0);
+      const total = totals.reduce((sum, v) => sum + v, 0);
+      setSummary({
+        total,
+        count: totals.length,
+        average: totals.length ? total / totals.length : 0,
+      });
     } catch (err: any) {
       console.error('Error loading sales report:', err);
     } finally {
@@ -196,34 +212,7 @@ export const SalesReport: React.FC = () => {
     }
   };
 
-  const loadSummaryCards = async () => {
-    try {
-      const loadTotal = async (range: { start: string; end: string }) => {
-        const { data } = await supabase
-          .from('ventas')
-          .select('total')
-          .in('sucursal_id', impersonating ? activeBranchIds : [profile?.sucursal_id])
-          .gte('creado_en', `${range.start}T00:00:00Z`)
-          .lte('creado_en', `${range.end}T23:59:59Z`);
-
-        return (data || []).reduce((sum: number, v: any) => sum + parseFloat(v.total), 0);
-      };
-
-      const [todayVal, weekVal, monthVal] = await Promise.all([
-        loadTotal(getTodayRange()),
-        loadTotal(getWeekRange()),
-        loadTotal(getMonthRange()),
-      ]);
-      setTodayTotal(todayVal);
-      setWeekTotal(weekVal);
-      setMonthTotal(monthVal);
-    } catch (err) {
-      console.error('Error loading summary cards:', err);
-    }
-  };
-
   useEffect(() => {
-    loadSummaryCards();
     loadReport(dateFrom, dateTo);
   }, []);
 
@@ -329,24 +318,33 @@ export const SalesReport: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-2">
           <div className="flex justify-between items-start">
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t.todaySales}</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t.totalPeriod}</p>
             <DollarSign className="w-4 h-4 text-emerald-600" />
           </div>
-          <p className="text-2xl font-extrabold text-slate-950 font-mono">{formatMoney(todayTotal)}</p>
+          <p className="text-2xl font-extrabold text-slate-950 font-mono">{formatMoney(summary.total)}</p>
+          <p className="text-[10px] text-slate-400 font-medium">
+            {formatShortDate(appliedRange.from)} – {formatShortDate(appliedRange.to)}
+          </p>
         </div>
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-2">
           <div className="flex justify-between items-start">
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t.weekSales}</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t.countPeriod}</p>
             <TrendingUp className="w-4 h-4 text-blue-600" />
           </div>
-          <p className="text-2xl font-extrabold text-slate-950 font-mono">{formatMoney(weekTotal)}</p>
+          <p className="text-2xl font-extrabold text-slate-950 font-mono">{summary.count}</p>
+          <p className="text-[10px] text-slate-400 font-medium">
+            {formatShortDate(appliedRange.from)} – {formatShortDate(appliedRange.to)}
+          </p>
         </div>
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-2">
           <div className="flex justify-between items-start">
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t.monthSales}</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t.avgTicket}</p>
             <Calendar className="w-4 h-4 text-indigo-600" />
           </div>
-          <p className="text-2xl font-extrabold text-slate-950 font-mono">{formatMoney(monthTotal)}</p>
+          <p className="text-2xl font-extrabold text-slate-950 font-mono">{formatMoney(summary.average)}</p>
+          <p className="text-[10px] text-slate-400 font-medium">
+            {formatShortDate(appliedRange.from)} – {formatShortDate(appliedRange.to)}
+          </p>
         </div>
       </div>
 
