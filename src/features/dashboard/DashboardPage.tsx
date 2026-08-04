@@ -80,9 +80,19 @@ const methodColors: Record<string, string> = {
   mixto: 'bg-amber-50 text-amber-700 border-amber-200',
 };
 
+const toIsoDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const getDefaultRange = (): DateRange => {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - 6);
+  return { from: toIsoDate(start), to: toIsoDate(end) };
+};
+
 const getTodayRange = (): DateRange => {
   const now = new Date();
-  const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const iso = toIsoDate(now);
   return { from: iso, to: iso };
 };
 
@@ -91,6 +101,8 @@ const formatRangeLabel = (range: DateRange, lang: string) => {
     const d = new Date(`${iso}T00:00:00`);
     return d.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
+  const def = getDefaultRange();
+  if (range.from === def.from && range.to === def.to) return lang === 'es' ? 'Últimos 7 días' : 'Last 7 days';
   const isToday = getTodayRange().from === range.from && getTodayRange().to === range.to;
   if (isToday) return lang === 'es' ? 'Hoy' : 'Today';
   return `${fmt(range.from)} – ${fmt(range.to)}`;
@@ -149,7 +161,7 @@ export const DashboardPage: React.FC = () => {
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState<DateRange>(getTodayRange());
+  const [range, setRange] = useState<DateRange>(getDefaultRange());
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
 
   useEffect(() => {
@@ -455,7 +467,7 @@ export const DashboardPage: React.FC = () => {
           initialFrom={range.from}
           initialTo={range.to}
           onApply={(from, to) => setRange({ from, to })}
-          onClear={() => setRange(getTodayRange())}
+          onClear={() => setRange(getDefaultRange())}
           onClose={() => setRangeModalOpen(false)}
         />
       )}
