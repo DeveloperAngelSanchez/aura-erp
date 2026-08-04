@@ -1,33 +1,105 @@
 import { supabase } from '../../api/supabaseClient';
 
-function getDayRange(date: Date) {
-  const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(date);
-  end.setHours(23, 59, 59, 999);
-  return { start: start.toISOString(), end: end.toISOString() };
+export interface DateRange {
+  from: string;
+  to: string;
 }
 
-function getMonthRange() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  return { start: start.toISOString(), end: now.toISOString() };
+function diffDays(start: Date, end: Date) {
+  const a = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const b = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.round((b - a) / 86400000);
 }
 
+function keyOf(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
-function formatShortDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+function weekStart(d: Date) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+interface SeriesRow {
+  creado_en: string;
+  total: number;
+  comision_generada: number;
+}
+
+function buildSalesSeries(rows: SeriesRow[], start: Date, end: Date) {
+  const totalDays = diffDays(start, end) + 1;
+  const granularity: 'daily' | 'weekly' = totalDays > 35 ? 'weekly' : 'daily';
+
+  const buckets: Record<string, { label: string; ingresos: number; comisiones: number }> = {};
+
+  if (granularity === 'daily') {
+    for (let i = 0; i < totalDays; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      const key = keyOf(d);
+      buckets[key] = {
+        label: d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }),
+        ingresos: 0,
+        comisiones: 0,
+      };
+    }
+  } else {
+    let cursor = weekStart(start);
+    const endWeek = weekStart(end);
+    while (cursor.getTime() <= endWeek.getTime()) {
+      const key = keyOf(cursor);
+      buckets[key] = {
+        label: cursor.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }),
+        ingresos: 0,
+        comisiones: 0,
+      };
+      cursor.setDate(cursor.getDate() + 7);
+    }
+  }
+
+  rows.forEach((v) => {
+    const d = new Date(v.creado_en);
+    const key = granularity === 'daily' ? keyOf(d) : keyOf(weekStart(d));
+    if (buckets[key]) {
+      buckets[key].ingresos += parseFloat(String(v.total)) || 0;
+      buckets[key].comisiones += parseFloat(String(v.comision_generada)) || 0;
+    }
+  });
+
+  const entries = Object.keys(buckets)
+    .sort()
+    .map((k) => buckets[k]);
+
+  const salesSeries = entries.map((e) => ({
+    day: e.label,
+    total: Math.round(e.ingresos * 100) / 100,
+  }));
+
+  const revenueVsCommissions = entries.map((e) => ({
+    date: e.label,
+    ingresos: Math.round(e.ingresos * 100) / 100,
+    comisiones: Math.round(e.comisiones * 100) / 100,
+  }));
+
+  return { salesSeries, revenueVsCommissions, granularity };
 }
 
 export interface DashboardData {
-  todaySales: number;
-  monthSales: number;
+  totalSales: number;
+  salesCount: number;
   activeTurns: number;
   activeBarbers: number;
   avgTicket: number;
   lowStockCount: number;
-  weeklySales: { day: string; fullDate: string; total: number }[];
+  granularity: 'daily' | 'weekly';
+  salesSeries: { day: string; total: number }[];
   paymentMethods: { name: string; value: number; color: string }[];
   revenueVsCommissions: { date: string; ingresos: number; comisiones: number }[];
   topServices: { name: string; total: number; cantidad: number }[];
@@ -43,42 +115,23 @@ export interface DashboardData {
   lowStockItems: { nombre: string; stock_actual: number; stock_minimo: number }[];
 }
 
-export async function loadDashboard(branchIds: string[]): Promise<DashboardData> {
-  const today = getDayRange(new Date());
-  const month = getMonthRange();
-
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-  sevenDaysAgo.setHours(0, 0, 0, 0);
-
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
-  thirtyDaysAgo.setHours(0, 0, 0, 0);
+export async function loadDashboard(branchIds: string[], range: DateRange): Promise<DashboardData> {
+  const start = new Date(`${range.from}T00:00:00`);
+  const end = new Date(`${range.to}T23:59:59.999`);
 
   const [
-    todaySalesRes,
-    monthSalesRes,
+    salesRes,
     turnsRes,
     barbersRes,
-    avgTicketRes,
     lowStockRes,
-    weeklySalesRes,
-    paymentMethodsRes,
     recentSalesRes,
     lowStockItemsRes,
   ] = await Promise.all([
-    // Today sales
-    supabase.from('ventas').select('total')
+    // Sales in range (id + total)
+    supabase.from('ventas').select('id, total')
       .in('sucursal_id', branchIds)
-      .gte('creado_en', today.start)
-      .lte('creado_en', today.end)
-      .eq('estado', 'completada'),
-
-    // Month sales
-    supabase.from('ventas').select('total')
-      .in('sucursal_id', branchIds)
-      .gte('creado_en', month.start)
-      .lte('creado_en', month.end)
+      .gte('creado_en', start.toISOString())
+      .lte('creado_en', end.toISOString())
       .eq('estado', 'completada'),
 
     // Active turns
@@ -91,32 +144,14 @@ export async function loadDashboard(branchIds: string[]): Promise<DashboardData>
       .eq('rol', 'barbero')
       .in('sucursal_id', branchIds),
 
-    // Avg ticket today
-    supabase.from('ventas').select('total')
-      .in('sucursal_id', branchIds)
-      .gte('creado_en', today.start)
-      .lte('creado_en', today.end)
-      .eq('estado', 'completada'),
-
     // Low stock count
     supabase.from('vista_items_stock_bajo').select('id', { count: 'exact', head: true }),
 
-    // Weekly sales (last 7 days)
-    supabase.from('ventas').select('total, creado_en')
-      .in('sucursal_id', branchIds)
-      .gte('creado_en', sevenDaysAgo.toISOString())
-      .lte('creado_en', today.end)
-      .eq('estado', 'completada')
-      .order('creado_en', { ascending: true }),
-
-    // Payment methods (this month)
-    supabase.from('venta_pagos').select('metodo_pago, monto, venta_id')
-      .gte('creado_en', month.start)
-      .lte('creado_en', month.end),
-
-    // Recent sales
+    // Recent sales in range
     supabase.from('vista_reporte_ventas').select('id, correlativo, total, metodo_pago, creado_en, usuario_nombre, cliente_nombre')
       .in('sucursal_id', branchIds)
+      .gte('creado_en', start.toISOString())
+      .lte('creado_en', end.toISOString())
       .order('creado_en', { ascending: false })
       .limit(10),
 
@@ -126,131 +161,105 @@ export async function loadDashboard(branchIds: string[]): Promise<DashboardData>
       .limit(5),
   ]);
 
-  // Process sales
-  const todayTotal = (todaySalesRes.data || []).reduce((s: number, v: any) => s + parseFloat(v.total), 0);
-  const monthTotal = (monthSalesRes.data || []).reduce((s: number, v: any) => s + parseFloat(v.total), 0);
-  const todayCount = (avgTicketRes.data || []).length;
-  const avgTicket = todayCount > 0 ? todayTotal / todayCount : 0;
+  const salesRows = (salesRes.data || []) as { id: string; total: number }[];
+  const saleIds = salesRows.map((v) => v.id);
+  const totalSales = salesRows.reduce((s, v) => s + parseFloat(String(v.total)), 0);
+  const salesCount = salesRows.length;
+  const avgTicket = salesCount > 0 ? totalSales / salesCount : 0;
 
-  // Weekly sales
-  const dailyMap: Record<string, { day: string; fullDate: string; total: number }> = {};
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().split('T')[0];
-    const dayName = d.toLocaleDateString('es-MX', { weekday: 'short' }).toUpperCase();
-    dailyMap[key] = { day: dayName, fullDate: key, total: 0 };
-  }
-  (weeklySalesRes.data || []).forEach((v: any) => {
-    const key = new Date(v.creado_en).toISOString().split('T')[0];
-    if (dailyMap[key]) {
-      dailyMap[key].total += parseFloat(v.total);
-    }
-  });
-  const weeklySales = Object.values(dailyMap);
-
-  // Payment methods
-  const methodMap: Record<string, number> = {};
-  (paymentMethodsRes.data || []).forEach((v: any) => {
-    if (!methodMap[v.metodo_pago]) methodMap[v.metodo_pago] = 0;
-    methodMap[v.metodo_pago] += parseFloat(v.monto);
-  });
-  const paymentColors: Record<string, string> = {
-    efectivo: '#10b981',
-    tarjeta: '#3b82f6',
-    transferencia: '#8b5cf6',
-    mixto: '#f59e0b',
-  };
-  const methodLabels: Record<string, string> = {
-    efectivo: 'Efectivo',
-    tarjeta: 'Tarjeta',
-    transferencia: 'Transferencia',
-    mixto: 'Mixto',
-  };
-  const paymentMethods = Object.entries(methodMap)
-    .map(([name, value]) => ({
-      name: methodLabels[name] || name,
-      value,
-      color: paymentColors[name] || '#94a3b8',
-    }))
-    .sort((a, b) => b.value - a.value);
-
-  // Revenue vs Commissions (last 30 days)
-  const thirtyDayMap: Record<string, { ingresos: number; comisiones: number }> = {};
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().split('T')[0];
-    thirtyDayMap[key] = { ingresos: 0, comisiones: 0 };
-  }
-  const thirtyDayRes = await supabase
+  // Series for charts (sales per day/week within range)
+  const seriesRes = await supabase
     .from('vista_reporte_ventas')
     .select('total, comision_generada, creado_en')
     .in('sucursal_id', branchIds)
-    .gte('creado_en', thirtyDaysAgo.toISOString())
-    .lte('creado_en', today.end)
+    .gte('creado_en', start.toISOString())
+    .lte('creado_en', end.toISOString())
     .order('creado_en', { ascending: true });
-  (thirtyDayRes.data || []).forEach((v: any) => {
-    const key = new Date(v.creado_en).toISOString().split('T')[0];
-    if (thirtyDayMap[key]) {
-      thirtyDayMap[key].ingresos += parseFloat(v.total);
-      thirtyDayMap[key].comisiones += parseFloat(v.comision_generada || 0);
-    }
-  });
-  const revenueVsCommissions = Object.entries(thirtyDayMap).map(([date, val]) => ({
-    date: formatShortDate(date),
-    ingresos: Math.round(val.ingresos * 100) / 100,
-    comisiones: Math.round(val.comisiones * 100) / 100,
-  }));
+  const { salesSeries, revenueVsCommissions, granularity } = buildSalesSeries(
+    (seriesRes.data || []) as SeriesRow[],
+    start,
+    end
+  );
 
-  // Top services (this month)
-  const topServicesRes = await supabase
-    .from('venta_detalles')
-    .select('item_id, cantidad, venta_id')
-    .in('venta_id', (await supabase
-      .from('ventas')
-      .select('id')
-      .in('sucursal_id', branchIds)
-      .gte('creado_en', month.start)
-      .lte('creado_en', month.end)
-      .eq('estado', 'completada')
-    ).data?.map(v => v.id) || []);
-  const itemCountMap: Record<string, { name: string; cantidad: number; total: number }> = {};
-  const itemNames = new Set(topServicesRes.data?.map(v => v.item_id) || []);
-  const itemNameRes = await supabase
-    .from('items')
-    .select('id, nombre, precio_venta')
-    .in('id', [...itemNames]);
-  const itemNameMap: Record<string, { nombre: string; precio_venta: number }> = {};
-  (itemNameRes.data || []).forEach((i: any) => {
-    itemNameMap[i.id] = { nombre: i.nombre, precio_venta: parseFloat(i.precio_venta) };
-  });
-  (topServicesRes.data || []).forEach((v: any) => {
-    if (!itemCountMap[v.item_id]) {
-      itemCountMap[v.item_id] = {
-        name: itemNameMap[v.item_id]?.nombre || v.item_id,
-        cantidad: 0,
-        total: 0,
-      };
+  // Payment methods & top services filtered by sales within range
+  let paymentMethods: { name: string; value: number; color: string }[] = [];
+  let topServices: { name: string; total: number; cantidad: number }[] = [];
+
+  if (saleIds.length > 0) {
+    const [paymentRes, detailRes] = await Promise.all([
+      supabase.from('venta_pagos').select('metodo_pago, monto')
+        .in('venta_id', saleIds),
+      supabase.from('venta_detalles').select('item_id, cantidad')
+        .in('venta_id', saleIds),
+    ]);
+
+    // Payment methods
+    const methodMap: Record<string, number> = {};
+    (paymentRes.data || []).forEach((v: any) => {
+      if (!methodMap[v.metodo_pago]) methodMap[v.metodo_pago] = 0;
+      methodMap[v.metodo_pago] += parseFloat(v.monto);
+    });
+    const paymentColors: Record<string, string> = {
+      efectivo: '#10b981',
+      tarjeta: '#3b82f6',
+      transferencia: '#8b5cf6',
+      mixto: '#f59e0b',
+    };
+    const methodLabels: Record<string, string> = {
+      efectivo: 'Efectivo',
+      tarjeta: 'Tarjeta',
+      transferencia: 'Transferencia',
+      mixto: 'Mixto',
+    };
+    paymentMethods = Object.entries(methodMap)
+      .map(([name, value]) => ({
+        name: methodLabels[name] || name,
+        value,
+        color: paymentColors[name] || '#94a3b8',
+      }))
+      .sort((a, b) => b.value - a.value);
+
+    // Top services
+    const itemIds = [...new Set((detailRes.data || []).map((v: any) => v.item_id))];
+    const itemNameMap: Record<string, string> = {};
+    if (itemIds.length > 0) {
+      const itemNameRes = await supabase
+        .from('items')
+        .select('id, nombre')
+        .in('id', itemIds);
+      (itemNameRes.data || []).forEach((i: any) => {
+        itemNameMap[i.id] = i.nombre;
+      });
     }
-    itemCountMap[v.item_id].cantidad += v.cantidad;
-  });
-  const topServices = Object.values(itemCountMap)
-    .sort((a, b) => b.cantidad - a.cantidad)
-    .slice(0, 5);
+    const itemCountMap: Record<string, { name: string; cantidad: number; total: number }> = {};
+    (detailRes.data || []).forEach((v: any) => {
+      if (!itemCountMap[v.item_id]) {
+        itemCountMap[v.item_id] = {
+          name: itemNameMap[v.item_id] || v.item_id,
+          cantidad: 0,
+          total: 0,
+        };
+      }
+      itemCountMap[v.item_id].cantidad += v.cantidad;
+    });
+    topServices = Object.values(itemCountMap)
+      .sort((a, b) => b.cantidad - a.cantidad)
+      .slice(0, 5);
+  }
 
   return {
-    todaySales: todayTotal,
-    monthSales: monthTotal,
+    totalSales,
+    salesCount,
     activeTurns: turnsRes.count ?? 0,
     activeBarbers: barbersRes.count ?? 0,
     avgTicket,
     lowStockCount: lowStockRes.count ?? 0,
-    weeklySales,
+    granularity,
+    salesSeries,
     paymentMethods,
     revenueVsCommissions,
     topServices,
-    recentSales: (recentSalesRes.data || []).slice(0, 8) as any[],
+    recentSales: (recentSalesRes.data || []).slice(0, 8),
     lowStockItems: (lowStockItemsRes.data || []) as any[],
   };
 }

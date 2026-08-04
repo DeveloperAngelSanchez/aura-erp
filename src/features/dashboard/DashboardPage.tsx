@@ -3,13 +3,15 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useEmpresa } from '../../context/EmpresaContext';
-import { loadDashboard, type DashboardData } from './dashboardService';
+import { loadDashboard, type DashboardData, type DateRange } from './dashboardService';
+import { DateRangeModal } from './DateRangeModal';
 import {
   DollarSign,
   TrendingUp,
   ShoppingBag,
   Ticket,
   Award,
+  Calendar,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -20,12 +22,13 @@ const translations = {
   es: {
     welcome: 'Bienvenido de vuelta',
     subtitle: 'Resumen operativo del sistema',
-    todaySales: 'Ventas Hoy',
-    monthSales: 'Ventas del Mes',
+    totalSales: 'Total de Ventas',
+    salesCount: 'Ventas Registradas',
     activeTurns: 'Turnos Activos',
     avgTicket: 'Ticket Promedio',
     bestSeller: 'Más Vendido',
-    weeklySales: 'Ventas Semanales',
+    salesByDay: 'Ventas por Día',
+    salesByWeek: 'Ventas por Semana',
     paymentMethods: 'Métodos de Pago',
     revenueVsCommissions: 'Ingresos vs Comisiones',
     topServices: 'Servicios Más Vendidos',
@@ -37,16 +40,19 @@ const translations = {
     loading: 'Cargando dashboard...',
     items: 'items',
     noData: 'Sin datos en este período',
+    salesWord: 'ventas',
+    filterTitle: 'Filtrar por rango de fechas',
   },
   en: {
     welcome: 'Welcome back',
     subtitle: 'System operational overview',
-    todaySales: "Today's Sales",
-    monthSales: 'Monthly Sales',
+    totalSales: 'Total Sales',
+    salesCount: 'Sales Count',
     activeTurns: 'Active Turns',
     avgTicket: 'Avg Ticket',
     bestSeller: 'Best Seller',
-    weeklySales: 'Weekly Sales',
+    salesByDay: 'Sales by Day',
+    salesByWeek: 'Sales by Week',
     paymentMethods: 'Payment Methods',
     revenueVsCommissions: 'Revenue vs Commissions',
     topServices: 'Top Services',
@@ -58,6 +64,8 @@ const translations = {
     loading: 'Loading dashboard...',
     items: 'items',
     noData: 'No data in this period',
+    salesWord: 'sales',
+    filterTitle: 'Filter by date range',
   },
 };
 
@@ -70,6 +78,22 @@ const methodColors: Record<string, string> = {
   tarjeta: 'bg-blue-50 text-blue-700 border-blue-200',
   transferencia: 'bg-purple-50 text-purple-700 border-purple-200',
   mixto: 'bg-amber-50 text-amber-700 border-amber-200',
+};
+
+const getTodayRange = (): DateRange => {
+  const now = new Date();
+  const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return { from: iso, to: iso };
+};
+
+const formatRangeLabel = (range: DateRange, lang: string) => {
+  const fmt = (iso: string) => {
+    const d = new Date(`${iso}T00:00:00`);
+    return d.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
+  const isToday = getTodayRange().from === range.from && getTodayRange().to === range.to;
+  if (isToday) return lang === 'es' ? 'Hoy' : 'Today';
+  return `${fmt(range.from)} – ${fmt(range.to)}`;
 };
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -125,6 +149,8 @@ export const DashboardPage: React.FC = () => {
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState<DateRange>(getTodayRange());
+  const [rangeModalOpen, setRangeModalOpen] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -132,7 +158,7 @@ export const DashboardPage: React.FC = () => {
       try {
         const branchIds = impersonating ? activeBranchIds : [profile?.sucursal_id].filter(Boolean) as string[];
         if (branchIds.length === 0) return;
-        const result = await loadDashboard(branchIds);
+        const result = await loadDashboard(branchIds, range);
         setData(result);
       } catch (err) {
         console.error('Dashboard error:', err);
@@ -141,7 +167,7 @@ export const DashboardPage: React.FC = () => {
       }
     };
     load();
-  }, [profile?.sucursal_id]);
+  }, [profile?.sucursal_id, range.from, range.to]);
 
   return (
     <div className="space-y-6">
@@ -153,24 +179,43 @@ export const DashboardPage: React.FC = () => {
           </h1>
           <p className="text-xs text-slate-400 font-medium mt-0.5">{t.subtitle}</p>
         </div>
-        <div className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border ${loading ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-          {loading ? 'Cargando...' : `${data?.recentSales.length || 0} ventas hoy`}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setRangeModalOpen(true)}
+            title={t.filterTitle}
+            className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-center shadow-2xs ${
+              loading ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'
+            }`}
+          >
+            <Calendar className="w-4 h-4" />
+          </button>
+          <div className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 ${loading ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+            {loading
+              ? (lang === 'es' ? 'Cargando...' : 'Loading...')
+              : (
+                <>
+                  <span>{data?.salesCount ?? 0} {t.salesWord}</span>
+                  <span className={`font-semibold ${loading ? '' : 'text-emerald-600/80'}`}>· {formatRangeLabel(range, lang)}</span>
+                </>
+              )}
+          </div>
         </div>
       </div>
 
       {/* KPI Cards Grid with Fixed 112px Height */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <KpiCard
-          label={t.todaySales}
-          value={formatMoney(data?.todaySales ?? 0)}
+          label={t.totalSales}
+          value={formatMoney(data?.totalSales ?? 0)}
           icon={<DollarSign className="w-4 h-4 text-emerald-600" />}
           color="bg-emerald-50"
           accent="text-emerald-700"
           loading={loading}
         />
         <KpiCard
-          label={t.monthSales}
-          value={formatMoney(data?.monthSales ?? 0)}
+          label={t.salesCount}
+          value={String(data?.salesCount ?? 0)}
           icon={<TrendingUp className="w-4 h-4 text-blue-600" />}
           color="bg-blue-50"
           accent="text-blue-700"
@@ -209,20 +254,20 @@ export const DashboardPage: React.FC = () => {
         <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col justify-between">
           <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-5 flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-blue-500" />
-            {t.weeklySales}
+            {data?.granularity === 'weekly' ? t.salesByWeek : t.salesByDay}
           </h3>
           {loading ? (
             <div className="h-56 bg-slate-50 rounded-lg animate-pulse" />
           ) : (
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={data?.weeklySales || []} margin={{ top: 5, right: 10, left: -15, bottom: 5 }}>
+              <BarChart data={data?.salesSeries || []} margin={{ top: 5, right: 10, left: -15, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="total" radius={[6, 6, 0, 0]} fill="#3b82f6" maxBarSize={40}>
-                  {data?.weeklySales.map((_, i) => (
-                    <Cell key={i} fill={i === data.weeklySales.length - 1 ? '#2563eb' : '#93c5fd'} />
+                  {data?.salesSeries.map((_, i) => (
+                    <Cell key={i} fill={i === data.salesSeries.length - 1 ? '#2563eb' : '#93c5fd'} />
                   ))}
                 </Bar>
               </BarChart>
@@ -404,6 +449,16 @@ export const DashboardPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {rangeModalOpen && (
+        <DateRangeModal
+          initialFrom={range.from}
+          initialTo={range.to}
+          onApply={(from, to) => setRange({ from, to })}
+          onClear={() => setRange(getTodayRange())}
+          onClose={() => setRangeModalOpen(false)}
+        />
+      )}
     </div>
   );
 };
