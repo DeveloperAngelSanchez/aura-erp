@@ -23,6 +23,7 @@ interface Venta {
 
 interface Props {
   onClose: () => void;
+  historicalTurnId?: string;
 }
 
 const formatDateTimeString = (iso: string, lang: 'es' | 'en') => {
@@ -40,7 +41,7 @@ const formatDateTimeString = (iso: string, lang: 'es' | 'en') => {
   return `${capDay} ${dayNum} ${capMonth}. ${timeStr}`;
 };
 
-export const SalesHistoryModal: React.FC<Props> = ({ onClose }) => {
+export const SalesHistoryModal: React.FC<Props> = ({ onClose, historicalTurnId }) => {
   const { lang } = useLanguage();
   const { formatMoney } = useSettings();
   const { activeTurn } = useCash();
@@ -53,15 +54,21 @@ export const SalesHistoryModal: React.FC<Props> = ({ onClose }) => {
   const [anulationTarget, setAnulationTarget] = useState<{ id: string; total: number } | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const targetTurnId = historicalTurnId || activeTurn?.id;
+
   useEffect(() => {
     const load = async () => {
-      if (!activeTurn) return;
+      if (!targetTurnId) {
+        setVentas([]);
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
         const { data, error: err } = await supabase
           .from('ventas')
           .select('*, barbero:perfiles!ventas_barbero_id_fkey(nombre), usuario:perfiles!ventas_usuario_id_fkey(nombre), venta_pagos(metodo_pago, monto), venta_detalles(cantidad, precio_unitario, items(nombre))')
-          .eq('turno_id', activeTurn.id)
+          .eq('turno_id', targetTurnId)
           .eq('estado', 'completada')
           .order('creado_en', { ascending: false });
 
@@ -74,7 +81,7 @@ export const SalesHistoryModal: React.FC<Props> = ({ onClose }) => {
       }
     };
     load();
-  }, [activeTurn]);
+  }, [targetTurnId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -89,7 +96,7 @@ export const SalesHistoryModal: React.FC<Props> = ({ onClose }) => {
   return createPortal(
     <div 
       onClick={onClose}
-      className="fixed inset-0 z-[100] bg-slate-900/65 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[80] bg-slate-900/65 backdrop-blur-sm flex items-center justify-center p-4"
     >
       <div 
         onClick={(e) => e.stopPropagation()}

@@ -163,7 +163,26 @@ const translations = {
   }
 };
 
-export const POSTerminal: React.FC = () => {
+export interface POSTerminalProps {
+  historicalTurnId?: string;
+  historicalTurnData?: {
+    id: string;
+    sucursal_id: string;
+    usuario_id: string;
+    usuario_nombre: string;
+    sucursal_nombre: string;
+    abierto_en: string;
+    cerrado_en: string | null;
+  };
+  onCloseHistoricalMode?: () => void;
+}
+
+export const POSTerminal: React.FC<POSTerminalProps> = ({
+  historicalTurnId,
+  historicalTurnData,
+  onCloseHistoricalMode,
+}) => {
+  const isHistoricalMode = Boolean(historicalTurnId);
   const { profile, signOut } = useAuth();
   const { lang, toggleLanguage } = useLanguage();
   const { activeTurn, openTurn } = useCash();
@@ -414,12 +433,16 @@ export const POSTerminal: React.FC = () => {
   const [activeMobileTab, setActiveMobileTab] = useState<'catalog' | 'cart'>('catalog');
 
   const loadBarberos = async () => {
-    if (!profile?.sucursal_id) return;
+    // In historical mode, use the turn's branch; otherwise use profile's branch
+    const branchId = isHistoricalMode && historicalTurnData?.sucursal_id
+      ? historicalTurnData.sucursal_id
+      : profile?.sucursal_id;
+    if (!branchId) return;
     try {
       const { data, error } = await supabase
         .from('perfiles')
         .select('id, nombre')
-        .in('sucursal_id', impersonating ? activeBranchIds : [profile.sucursal_id])
+        .in('sucursal_id', impersonating && !isHistoricalMode ? activeBranchIds : [branchId])
         .eq('rol', 'barbero');
 
       if (!error && data) {
@@ -437,10 +460,15 @@ export const POSTerminal: React.FC = () => {
     try {
       setLoadingCatalog(true);
 
+      // In historical mode, load items from the turn's branch
+      const branchId = isHistoricalMode && historicalTurnData?.sucursal_id
+        ? historicalTurnData.sucursal_id
+        : profile?.sucursal_id;
+
       const { data: itemsData, error: itemsError } = await supabase
         .from('items')
         .select('*, item_presentaciones(*)')
-        .in('sucursal_id', impersonating ? activeBranchIds : [profile?.sucursal_id])
+        .in('sucursal_id', impersonating && !isHistoricalMode ? activeBranchIds : [branchId])
         .order('creado_en', { ascending: false });
 
       if (itemsError) throw itemsError;
@@ -473,11 +501,11 @@ export const POSTerminal: React.FC = () => {
   };
 
   useEffect(() => {
-    if (activeTurn) {
+    if (activeTurn || isHistoricalMode) {
       loadCatalog();
       loadBarberos();
     }
-  }, [activeTurn, profile]);
+  }, [activeTurn, isHistoricalMode, profile]);
 
   const handleOpenTurn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -582,7 +610,7 @@ export const POSTerminal: React.FC = () => {
 
   const handleCheckout = () => {
     const activeCart = getActiveCart();
-    if (activeCart.length === 0 || !activeTurn) return;
+    if (activeCart.length === 0 || (!activeTurn && !isHistoricalMode)) return;
     const total = getActiveCartTotal();
 
     const defaultMethod = config?.metodos_pago_favoritos?.[0] || 'efectivo';
@@ -592,7 +620,7 @@ export const POSTerminal: React.FC = () => {
 
   const submitCheckout = async () => {
     const activeCart = getActiveCart();
-    if (activeCart.length === 0 || !activeTurn || !activeAttention) return;
+    if (activeCart.length === 0 || (!activeTurn && !isHistoricalMode) || !activeAttention) return;
 
     const totalVenta = getCartTotal();
     const totalIngresado = pagos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0);
@@ -648,7 +676,15 @@ export const POSTerminal: React.FC = () => {
     }
 
     try {
-      const targetBranchId = impersonating && activeBranchIds.length > 0 ? activeBranchIds[0] : profile?.sucursal_id;
+      const targetBranchId = isHistoricalMode && historicalTurnData?.sucursal_id
+        ? historicalTurnData.sucursal_id
+        : (impersonating && activeBranchIds.length > 0 ? activeBranchIds[0] : profile?.sucursal_id);
+
+      const turnIdToUse = isHistoricalMode ? historicalTurnId : activeTurn?.id;
+
+      if (!turnIdToUse) {
+        throw new Error('No hay un turno válido seleccionado para registrar la venta.');
+      }
 
       let clienteId: string | null = activeAttention.clienteId || null;
       if (!clienteId && activeAttention.clienteNombre.trim()) {
@@ -672,9 +708,9 @@ export const POSTerminal: React.FC = () => {
         }
       }
 
-      const { error } = await supabase.rpc('procesar_venta_pos', {
+      const { data: saleIdData, error } = await supabase.rpc('procesar_venta_pos', {
         p_sucursal_id: targetBranchId,
-        p_turno_id: activeTurn.id,
+        p_turno_id: turnIdToUse,
         p_usuario_id: profile?.id,
         p_total: totalVenta,
         p_items: saleItems,
@@ -685,6 +721,22 @@ export const POSTerminal: React.FC = () => {
       });
 
       if (error) throw error;
+
+      // Register audit log if in historical mode
+      if (isHistoricalMode && historicalTurnId) {
+        await supabase.from('caja_auditoria_log').insert({
+          turno_id: historicalTurnId,
+          usuario_id: profile?.id,
+          accion: 'VENTA_POS_HISTORICA',
+          detalle: {
+            venta_id: saleIdData,
+            total: totalVenta,
+            pagos: salePagos,
+            barbero_id: selectedBarberoId || null,
+            cliente_nombre: activeAttention.clienteNombre.trim() || null,
+          },
+        });
+      }
 
       const barberoObj = barberos.find(b => b.id === selectedBarberoId);
       const barberoNombre = barberoObj ? barberoObj.nombre : (lang === 'es' ? 'Atención General' : 'General Staff');
@@ -739,18 +791,23 @@ export const POSTerminal: React.FC = () => {
   };
 
   return (
-    <div className="h-dvh bg-slate-50 text-slate-800 flex flex-col">
+    <div className="h-full w-full bg-slate-50 text-slate-800 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm z-30">
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="Aura" className="w-8 h-8 object-contain rounded-lg" />
           <div>
             <h1 className="font-extrabold text-base text-slate-900 tracking-tight">{t.posTitle}</h1>
-            {activeTurn && (
+            {isHistoricalMode ? (
+              <p className="text-[10px] text-amber-700 font-bold flex items-center gap-1 mt-0.5 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                <span>Modo Registro Histórico POS | Turno #{historicalTurnId?.slice(0, 8).toUpperCase()} | {historicalTurnData?.usuario_nombre || 'Cajero'} ({historicalTurnData?.sucursal_nombre})</span>
+              </p>
+            ) : activeTurn ? (
               <p className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                 <span>{t.drawerOpen} | {t.cashier}: {profile?.nombre}</span>
               </p>
-            )}
+            ) : null}
           </div>
         </div>
 
@@ -761,7 +818,7 @@ export const POSTerminal: React.FC = () => {
             <span>{lang === 'es' ? 'ES' : 'EN'}</span>
           </button>
 
-          {activeTurn && (
+          {(activeTurn || isHistoricalMode) && (
             <button onClick={() => setShowCashMovementModal(true)}
               className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm bg-white flex items-center gap-1.5 cursor-pointer">
               <DollarSign className="w-3.5 h-3.5" />
@@ -775,14 +832,22 @@ export const POSTerminal: React.FC = () => {
             <span>{t.salesHistory}</span>
           </button>
 
-          {profile?.rol === 'admin' && (
+          {!isHistoricalMode && profile?.rol === 'admin' && (
             <button onClick={() => navigate('/admin')}
               className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm bg-white">
               {lang === 'es' ? 'Volver a Admin' : 'Back to Admin'}
             </button>
           )}
 
-          {activeTurn ? (
+          {isHistoricalMode ? (
+            <button
+              onClick={onCloseHistoricalMode}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Cerrar Edición de Turno</span>
+            </button>
+          ) : activeTurn ? (
             <button onClick={() => navigate('/pos/cierre')}
               className="px-3 py-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
               <Lock className="w-3.5 h-3.5" />
@@ -798,7 +863,7 @@ export const POSTerminal: React.FC = () => {
         </div>
       </header>
 
-      {!activeTurn ? (
+      {!activeTurn && !isHistoricalMode ? (
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="bg-white border border-slate-200 rounded-2xl shadow-xl max-w-md w-full p-8 text-center space-y-6">
             <div className="w-16 h-16 rounded-full bg-slate-50 border border-slate-200 text-slate-400 flex items-center justify-center mx-auto shadow-inner">
@@ -934,7 +999,7 @@ export const POSTerminal: React.FC = () => {
 
       {/* New Attention Modal */}
       {showNewAttentionModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/65 backdrop-blur-sm flex items-center justify-center p-4"
+        <div className="fixed inset-0 z-[80] bg-slate-900/65 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => setShowNewAttentionModal(false)}>
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-sm shadow-xl p-6 space-y-6 text-slate-800 animate-in fade-in zoom-in duration-205"
             onClick={(e) => e.stopPropagation()}>
@@ -1069,11 +1134,11 @@ export const POSTerminal: React.FC = () => {
       {showCheckoutModal && (
         <>
           {/* Overlay to dim background (only covers catalog region on large screens) */}
-          <div className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-xs transition-opacity lg:block hidden"
+          <div className="fixed inset-0 z-[80] bg-slate-900/20 backdrop-blur-xs transition-opacity lg:block hidden"
             onClick={() => setShowCheckoutModal(false)} />
 
           {/* Slide-over panel aligning with CartPanel width (w-96) */}
-          <div className="fixed inset-y-0 right-0 z-50 w-full lg:w-96 bg-white border-l border-slate-200 shadow-2xl flex flex-col justify-between h-full animate-in slide-in-from-right duration-200">
+          <div className="fixed inset-y-0 right-0 z-[80] w-full lg:w-96 bg-white border-l border-slate-200 shadow-2xl flex flex-col justify-between h-full animate-in slide-in-from-right duration-200">
 
             {/* Header */}
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
@@ -1416,6 +1481,7 @@ export const POSTerminal: React.FC = () => {
       {showSalesHistoryModal && (
         <SalesHistoryModal
           onClose={() => setShowSalesHistoryModal(false)}
+          historicalTurnId={isHistoricalMode ? historicalTurnId : undefined}
         />
       )}
 

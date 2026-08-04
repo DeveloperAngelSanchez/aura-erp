@@ -48,6 +48,8 @@ interface CloseRecord {
   total_otros_metodos: number;
   total_ingresos_manuales: number;
   total_egresos_manuales: number;
+  es_manual?: boolean;
+  notas_auditoria?: string;
 }
 
 const ITEMS_PER_PAGE = 25;
@@ -410,6 +412,11 @@ export const CloseReport: React.FC = () => {
                         <span className="flex items-center gap-1.5 truncate">
                           <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                           <span className="truncate">{r.usuario_nombre}</span>
+                          {r.es_manual && (
+                            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold rounded shrink-0" title={r.notas_auditoria || 'Turno manual'}>
+                              Manual
+                            </span>
+                          )}
                         </span>
                       </td>
                       <td className="px-3 py-3 text-right font-mono font-bold text-slate-800 truncate">

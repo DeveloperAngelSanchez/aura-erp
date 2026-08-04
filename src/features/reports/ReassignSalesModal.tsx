@@ -207,29 +207,14 @@ export const ReassignSalesModal: React.FC<ReassignSalesModalProps> = ({
     setSaving(true);
     setError(null);
     try {
-      const selectedList = salesCandidates.filter((s) => selectedSaleIds.has(s.id));
-      const oldTurnIds = Array.from(new Set(selectedList.map((s) => s.turno_id).filter(Boolean))) as string[];
-
-      // 1. Update sales turno_id
-      const { error: updateErr } = await supabase
-        .from('ventas')
-        .update({ turno_id: selectedTurnId })
-        .in('id', Array.from(selectedSaleIds));
-
-      if (updateErr) throw updateErr;
-
-      // 2. Call SQL recalculate totals for target turn
-      const { error: rpcErr } = await supabase.rpc('recalcular_totales_turno', {
-        p_turno_id: selectedTurnId,
+      // Call atomic RPC function in PostgreSQL
+      const { error: rpcErr } = await supabase.rpc('reasignar_ventas_a_turno_atomico', {
+        p_turno_destino_id: selectedTurnId,
+        p_venta_ids: Array.from(selectedSaleIds),
+        p_usuario_id: profile?.id || null,
       });
-      if (rpcErr) console.warn('RPC recalculate target turn warning:', rpcErr);
 
-      // 3. Call SQL recalculate for old turns if any sales were moved from another turn
-      for (const oldId of oldTurnIds) {
-        if (oldId !== selectedTurnId) {
-          await supabase.rpc('recalcular_totales_turno', { p_turno_id: oldId });
-        }
-      }
+      if (rpcErr) throw rpcErr;
 
       setSuccessMsg(`¡Se anexaron ${selectedCount} ventas correctamente al turno!`);
       setTimeout(() => {

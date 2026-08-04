@@ -119,10 +119,35 @@ export const CreateHistoricalTurnModal: React.FC<CreateHistoricalTurnModalProps>
     setError(null);
 
     try {
-      const openIso = new Date(fechaApertura).toISOString();
-      const closeIso = new Date(fechaCierre).toISOString();
+      const openDate = new Date(fechaApertura);
+      const closeDate = new Date(fechaCierre);
 
-      // Insert closed historical turn
+      if (closeDate <= openDate) {
+        setError('La fecha y hora de cierre debe ser posterior a la fecha de apertura.');
+        setSaving(false);
+        return;
+      }
+
+      const openIso = openDate.toISOString();
+      const closeIso = closeDate.toISOString();
+
+      // Check overlapping shifts
+      const { data: overlapData, error: overlapErr } = await supabase
+        .from('caja_turnos')
+        .select('id')
+        .eq('sucursal_id', sucursalId)
+        .eq('usuario_id', usuarioId)
+        .lte('abierto_en', closeIso)
+        .gte('cerrado_en', openIso);
+
+      if (!overlapErr && overlapData && overlapData.length > 0) {
+        if (!window.confirm('Existe un turno que se solapa con el horario ingresado para este cajero. ¿Desea proceder de todos modos?')) {
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Insert closed historical turn with audit fields
       const { data, error: insertErr } = await supabase
         .from('caja_turnos')
         .insert({
@@ -135,11 +160,31 @@ export const CreateHistoricalTurnModal: React.FC<CreateHistoricalTurnModalProps>
           estado: 'cerrado',
           abierto_en: openIso,
           cerrado_en: closeIso,
+          es_manual: true,
+          notas_auditoria: notas || 'Creación retroactiva manual de turno',
         })
         .select('id')
         .single();
 
       if (insertErr) throw insertErr;
+
+      // Register audit log entry
+      if (data?.id) {
+        await supabase.from('caja_auditoria_log').insert({
+          turno_id: data.id,
+          usuario_id: profile?.id,
+          accion: 'CREACION_HISTORICA',
+          detalle: {
+            sucursal_id: sucursalId,
+            cajero_id: usuarioId,
+            abierto_en: openIso,
+            cerrado_en: closeIso,
+            monto_apertura: montoApertura,
+            monto_cierre_real: montoCierreReal,
+            notas: notas || 'Creación retroactiva manual',
+          },
+        });
+      }
 
       onSuccess(data.id);
       onClose();

@@ -91,7 +91,7 @@ export const CashMovementModal: React.FC<Props> = ({ onClose, onSuccess }) => {
   return createPortal(
     <div
       onClick={onClose}
-      className="fixed inset-0 z-[100] bg-slate-900/65 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-[80] bg-slate-900/65 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6"
     >
       <div
         onClick={(e) => e.stopPropagation()}

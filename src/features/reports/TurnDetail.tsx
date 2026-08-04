@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../../api/supabaseClient';
 import { useLanguage } from '../../context/LanguageContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useAuth } from '../../context/AuthContext';
 import { ReassignSalesModal } from './ReassignSalesModal';
+import { POSTerminal } from '../pos/POSTerminal';
 import {
   ArrowLeft,
   TrendingUp,
@@ -16,11 +18,14 @@ import {
   Smartphone,
   Plus,
   Unlink,
+  ShoppingCart,
 } from 'lucide-react';
 
 interface CloseRecord {
   id: string;
+  sucursal_id: string;
   sucursal_nombre: string;
+  usuario_id: string;
   usuario_nombre: string;
   monto_apertura: number;
   monto_cierre_esperado: number | null;
@@ -37,6 +42,8 @@ interface CloseRecord {
   total_otros_metodos: number;
   total_ingresos_manuales: number;
   total_egresos_manuales: number;
+  es_manual?: boolean;
+  notas_auditoria?: string;
 }
 
 interface SaleRecord {
@@ -159,6 +166,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turnId, onBack }) => {
   const [manualIncomes, setManualIncomes] = useState(0);
   const [manualExpenses, setManualExpenses] = useState(0);
   const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
+  const [isPOSHistoricalModeOpen, setIsPOSHistoricalModeOpen] = useState(false);
 
   useEffect(() => {
     loadTurnDetail(turnId);
@@ -169,14 +177,13 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turnId, onBack }) => {
       return;
     }
     try {
-      const { error: updateErr } = await supabase
-        .from('ventas')
-        .update({ turno_id: null })
-        .eq('id', saleId);
+      const { error: rpcErr } = await supabase.rpc('desvincular_venta_de_turno_atomico', {
+        p_venta_id: saleId,
+        p_usuario_id: profile?.id || null,
+      });
 
-      if (updateErr) throw updateErr;
+      if (rpcErr) throw rpcErr;
 
-      await supabase.rpc('recalcular_totales_turno', { p_turno_id: turnId });
       loadTurnDetail(turnId);
     } catch (err: any) {
       console.error('Error unlinking sale:', err);
@@ -396,13 +403,23 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turnId, onBack }) => {
             </span>
           </div>
           {isAdmin && (
-            <button
-              onClick={() => setIsReassignModalOpen(true)}
-              className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Anexar Ventas a este Turno</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsPOSHistoricalModeOpen(true)}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+              >
+                <ShoppingCart className="w-3.5 h-3.5" />
+                <span>Agregar Ventas desde el POS</span>
+              </button>
+
+              <button
+                onClick={() => setIsReassignModalOpen(true)}
+                className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Anexar Ventas Existentes</span>
+              </button>
+            </div>
           )}
         </div>
 
@@ -480,6 +497,28 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turnId, onBack }) => {
         preselectedTurnId={turnId}
         onSuccess={() => loadTurnDetail(turnId)}
       />
+
+      {isPOSHistoricalModeOpen && createPortal(
+        <div className="fixed inset-0 z-[60] bg-white overflow-hidden w-screen h-screen flex flex-col">
+          <POSTerminal
+            historicalTurnId={turn.id}
+            historicalTurnData={{
+              id: turn.id,
+              sucursal_id: turn.sucursal_id,
+              usuario_id: turn.usuario_id,
+              usuario_nombre: turn.usuario_nombre,
+              sucursal_nombre: turn.sucursal_nombre,
+              abierto_en: turn.abierto_en,
+              cerrado_en: turn.cerrado_en,
+            }}
+            onCloseHistoricalMode={() => {
+              setIsPOSHistoricalModeOpen(false);
+              loadTurnDetail(turnId);
+            }}
+          />
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
