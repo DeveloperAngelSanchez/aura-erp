@@ -1,0 +1,12 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /reset-password
+
+# Disallow private admin and internal POS paths from public crawling
+Disallow: /admin/
+Disallow: /pos/
+Disallow: /barber/
+
+Sitemap: https://aura-erp.com/sitemap.xml

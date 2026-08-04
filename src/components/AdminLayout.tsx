@@ -7,6 +7,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { Globe, LogOut, Menu } from 'lucide-react';
+import { SEO } from './SEO';
 
 const translations = {
   es: { logout: 'Cerrar Sesión' },
@@ -21,6 +22,7 @@ export const AdminLayout: React.FC = () => {
 
   return (
     <div className="flex bg-slate-50 text-slate-800 min-h-screen">
+      <SEO title="Panel de Administración" description="Administra ventas, inventarios, compras, reportes y cajas de tu empresa con Aura ERP." />
       {/* Sidebar navigation */}
       <Sidebar mobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} />
 

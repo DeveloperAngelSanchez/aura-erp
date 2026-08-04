@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
 import { useLanguage } from '../../context/LanguageContext';
+import { SEO } from '../../components/SEO';
 
 const translations = {
   es: {
@@ -111,6 +112,10 @@ export const Login: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-white text-slate-900 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
+      <SEO 
+        title="Iniciar Sesión" 
+        description="Ingresa a tu cuenta de Aura ERP para administrar el Punto de Venta, inventarios, cajas y personal de tu negocio." 
+      />
       
       {/* Lado Izquierdo: Formulario */}
       <div className="w-full lg:w-1/2 flex flex-col justify-between p-6 sm:p-8 lg:p-16 relative safe-area-padding min-h-screen lg:min-h-0 overflow-y-auto">

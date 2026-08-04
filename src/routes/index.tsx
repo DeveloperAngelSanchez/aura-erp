@@ -19,6 +19,8 @@ import { CustomerManager } from '../features/customers/CustomerManager.tsx';
 import { StaffManager } from '../features/staff/StaffManager.tsx';
 import { CloseTurnPage } from '../features/cash/CloseTurnPage.tsx';
 
+import { LandingPage } from '../features/landing/LandingPage.tsx';
+
 export const AppRoutes: React.FC = () => {
   const { user, profile } = useAuth();
 
@@ -33,6 +35,10 @@ export const AppRoutes: React.FC = () => {
 
   return (
     <Routes>
+      <Route 
+        path="/" 
+        element={<LandingPage />} 
+      />
       <Route 
         path="/login" 
         element={user ? <Navigate to={getRedirectPath()} replace /> : <Login />} 
