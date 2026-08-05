@@ -63,8 +63,8 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   const { formatMoney } = useSettings();
 
   return (
-    <div className="w-full lg:w-96 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col justify-between h-full shadow-lg z-10">
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+    <div className="w-full lg:w-96 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col justify-between h-full min-h-0 shadow-lg z-10 overflow-hidden">
+      <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-0">
 
         {/* Selector de Barbero - Alineado estéticamente */}
         <div className="relative w-full mb-4">
@@ -143,7 +143,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
         )}
       </div>
 
-      <div className="bg-slate-50 border-t border-slate-200 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] space-y-4">
+      <div className="bg-slate-50 border-t border-slate-200 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] space-y-3 shrink-0">
         <div className="space-y-1.5">
           <div className="flex justify-between text-xs text-slate-500 font-medium">
             <span>{t.subtotal}</span>

@@ -791,7 +791,7 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
   };
 
   return (
-    <div className="h-full w-full bg-slate-50 text-slate-800 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+    <div className="fixed inset-0 w-full h-full h-[100dvh] bg-slate-50 text-slate-800 flex flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm z-30">
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="Aura" className="w-8 h-8 object-contain rounded-lg" />
@@ -960,9 +960,9 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
             </button>
           </div>
 
-          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
             {/* Catalog Panel — visible on lg+ or when mobile tab is 'catalog' */}
-            <div className={`${activeMobileTab === 'catalog' ? 'flex' : 'hidden'} lg:flex flex-1 h-full`}>
+            <div className={`${activeMobileTab === 'catalog' ? 'flex' : 'hidden'} lg:flex flex-1 h-full min-h-0`}>
               <CatalogPanel
                 loadingCatalog={loadingCatalog}
                 searchTerm={searchTerm}
@@ -978,7 +978,7 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
             </div>
 
             {/* Cart Panel — visible on lg+ or when mobile tab is 'cart' */}
-            <div className={`${activeMobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex h-full`}>
+            <div className={`${activeMobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex h-full min-h-0`}>
               <CartPanel
                 cart={getActiveCart()}
                 t={t}
