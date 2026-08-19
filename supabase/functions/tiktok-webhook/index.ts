@@ -52,25 +52,60 @@ serve(async (req) => {
     const payload = await req.json();
     console.log("Evento de Webhook de TikTok recibido:", JSON.stringify(payload));
 
-    // Validar si el evento es de tipo mensaje
-    if (payload.event === "message" && payload.message) {
-      const { sender_id, recipient_id, content, create_time } = payload.message;
+    // Validar si es un evento de webhook de TikTok
+    if (payload.event) {
+      const clientKey = payload.client_key;
+      const createTime = payload.create_time;
+      
+      // Resolver datos de remitente y contenido del mensaje
+      let sender_id = payload.user_openid;
+      let rawContent = payload.content || "";
+      let messageContent = "";
+
+      // Intentar parsear el contenido si viene como un JSON serializado
+      if (rawContent && typeof rawContent === "string" && rawContent.trim().startsWith("{")) {
+        try {
+          const parsed = JSON.parse(rawContent);
+          messageContent = parsed.text || parsed.content || rawContent;
+        } catch {
+          messageContent = rawContent;
+        }
+      } else {
+        messageContent = rawContent;
+      }
+
+      // Soporte para simulaciones previas locales
+      if (payload.message) {
+        sender_id = payload.message.sender_id || sender_id;
+        messageContent = payload.message.content || messageContent;
+      }
+
+      if (!sender_id) {
+        return new Response(JSON.stringify({ message: "Evento recibido pero sin identificador de usuario remitente." }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       // Intentar resolver la empresa dueña de la cuenta de TikTok
       let empresaId = url.searchParams.get("empresa_id");
       
       if (!empresaId) {
-        // Buscar empresa por su ID de TikTok Business vinculado
-        const { data: config, error: configError } = await adminClient
-          .from("crm_config_tiktok")
-          .select("empresa_id")
-          .eq("tiktok_business_id", recipient_id)
-          .maybeSingle();
+        // Buscar empresa por su Client Key (tiktok_app_id) directo del payload
+        if (clientKey) {
+          const { data: config } = await adminClient
+            .from("crm_config_tiktok")
+            .select("empresa_id")
+            .eq("tiktok_app_id", clientKey)
+            .maybeSingle();
 
-        if (config && !configError) {
-          empresaId = config.empresa_id;
-        } else {
-          // Fallback: Si no se encuentra, buscar la primera configuración activa (para desarrollo/pruebas)
+          if (config) {
+            empresaId = config.empresa_id;
+          }
+        }
+        
+        // Fallback: Si no se encuentra, buscar por el primer activo en desarrollo
+        if (!empresaId) {
           const { data: fallbackConfig } = await adminClient
             .from("crm_config_tiktok")
             .select("empresa_id")
@@ -92,15 +127,15 @@ serve(async (req) => {
       }
 
       // 1. Buscar si ya existe la conversación en crm_conversaciones
-      let { data: conv, error: convError } = await adminClient
+      let { data: conv } = await adminClient
         .from("crm_conversaciones")
         .select("*")
         .eq("empresa_id", empresaId)
         .eq("tiktok_user_id", sender_id)
         .maybeSingle();
 
-      const msgTimeStr = create_time 
-        ? new Date(create_time * 1000).toISOString() 
+      const msgTimeStr = createTime 
+        ? new Date(createTime * 1000).toISOString() 
         : new Date().toISOString();
 
       if (!conv) {
@@ -136,7 +171,7 @@ serve(async (req) => {
 
         // Crear la conversación
         const { data: newConv, error: errNewConv } = await adminClient
-          .from("crm_conversaciones")
+          .from('crm_conversaciones')
           .insert({
             empresa_id: empresaId,
             tiktok_user_id: sender_id,
@@ -145,7 +180,7 @@ serve(async (req) => {
             avatar_url: avatarUrl,
             estado: "pendiente",
             no_leidos: 1,
-            ultimo_mensaje: content,
+            ultimo_mensaje: messageContent,
             ultimo_mensaje_at: msgTimeStr,
           })
           .select("*")
@@ -156,9 +191,9 @@ serve(async (req) => {
       } else {
         // Actualizar la conversación existente
         const { error: errUpdate } = await adminClient
-          .from("crm_conversaciones")
+          .from('crm_conversaciones')
           .update({
-            ultimo_mensaje: content,
+            ultimo_mensaje: messageContent,
             ultimo_mensaje_at: msgTimeStr,
             no_leidos: conv.no_leidos + 1,
             estado: conv.estado === "cerrado" ? "pendiente" : conv.estado,
@@ -171,11 +206,11 @@ serve(async (req) => {
 
       // 2. Insertar el mensaje entrante en crm_mensajes
       const { error: errMsgError } = await adminClient
-        .from("crm_mensajes")
+        .from('crm_mensajes')
         .insert({
           conversacion_id: conv.id,
           direccion: "inbound",
-          contenido: content,
+          contenido: messageContent,
           leido: false,
           creado_en: msgTimeStr,
         });

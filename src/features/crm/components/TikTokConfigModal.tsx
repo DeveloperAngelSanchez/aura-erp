@@ -178,21 +178,62 @@ export const TikTokConfigModal: React.FC<TikTokConfigModalProps> = ({
               {/* Conectar Cuenta OAuth (Solo si no es Sandbox y tiene App ID) */}
               {!config.modo_sandbox && config.tiktok_app_id && (
                 <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const redirectUri = window.location.origin + '/crm/tiktok';
-                      const authUrl = `https://www.tiktok.com/v2/auth/authorize/?client_key=${config.tiktok_app_id}&scope=user.info.basic,user.info.profile&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${empresaId}`;
-                      window.location.href = authUrl;
-                    }}
-                    className="w-full py-2.5 px-4 bg-slate-900 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-md cursor-pointer border border-slate-700"
-                  >
-                    <span className="text-sm">🎵</span>
-                    <span>Conectar Cuenta de TikTok (Recomendado)</span>
-                  </button>
-                  <p className="text-[10px] text-slate-400 text-center mt-1">
-                    Te redirigirá a TikTok de forma segura para iniciar sesión y autorizar los permisos de chat.
-                  </p>
+                  {config.access_token ? (
+                    <div className="space-y-2">
+                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                          <div className="text-[11px] text-emerald-800 font-semibold leading-tight">
+                            🎵 Cuenta de TikTok Vinculada
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              setGuardando(true);
+                              const updated = {
+                                ...config,
+                                access_token: '',
+                                refresh_token: '',
+                                activo: false,
+                                empresa_id: empresaId,
+                              };
+                              await tiktokService.guardarConfiguracion(updated);
+                              setConfig(updated);
+                              setMensajeExito('Cuenta desvinculada correctamente.');
+                              setTimeout(() => setMensajeExito(''), 2000);
+                            } catch (err) {
+                              console.error('Error al desvincular:', err);
+                            } finally {
+                              setGuardando(false);
+                            }
+                          }}
+                          className="text-[10px] bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold px-2.5 py-1.5 rounded-lg border border-rose-200 transition-colors"
+                        >
+                          Desconectar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const redirectUri = window.location.origin + '/crm/tiktok';
+                          const authUrl = `https://www.tiktok.com/v2/auth/authorize/?client_key=${config.tiktok_app_id}&scope=user.info.basic,user.info.profile&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${empresaId}`;
+                          window.location.href = authUrl;
+                        }}
+                        className="w-full py-2.5 px-4 bg-slate-900 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-md cursor-pointer border border-slate-700"
+                      >
+                        <span className="text-sm">🎵</span>
+                        <span>Conectar Cuenta de TikTok (Recomendado)</span>
+                      </button>
+                      <p className="text-[10px] text-slate-400 text-center mt-1">
+                        Te redirigirá a TikTok de forma segura para iniciar sesión y autorizar los permisos de chat.
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
 
