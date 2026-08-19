@@ -155,7 +155,7 @@ export const SalesReport: React.FC = () => {
   const { profile } = useAuth();
   const { lang } = useLanguage();
   const { formatMoney } = useSettings();
-  const { impersonating, activeBranchIds } = useEmpresa();
+  const { impersonating, activeBranchIds, rubroConfig } = useEmpresa();
   const t = translations[lang];
 
   const today = getTodayRange();
@@ -420,9 +420,9 @@ export const SalesReport: React.FC = () => {
                       <div onMouseDown={(e) => handleMouseDown('cashier', e)} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400/40 z-10" />
                     </th>
 
-                    {/* Barbero */}
+                    {/* Atendido por (Barbero / Mesero) */}
                     <th style={{ width: columnWidths.barber }} className="relative py-3.5 px-3 whitespace-nowrap group">
-                      <span>{t.barber}</span>
+                      <span>{rubroConfig.labels.salesRoleHeader}</span>
                       <div onMouseDown={(e) => handleMouseDown('barber', e)} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400/40 z-10" />
                     </th>
 

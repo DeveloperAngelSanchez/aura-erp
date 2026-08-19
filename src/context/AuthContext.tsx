@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../api/supabaseClient';
+import type { UserRole } from '../config/rubrosConfig';
 
 export interface Profile {
   id: string;
   sucursal_id: string | null;
   nombre: string;
-  rol: 'admin' | 'cajero' | 'barbero';
+  rol: UserRole;
   rol_sistema: 'sistema_admin' | null;
   creado_en: string;
 }
@@ -46,30 +47,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // Check active session
+    let initialized = false;
+
+    // Check active session on initial startup
     supabase.auth.getSession().then(({ data: { session } }) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
-        fetchProfile(currentUser.id).finally(() => setLoading(false));
+        fetchProfile(currentUser.id).finally(() => {
+          setLoading(false);
+          initialized = true;
+        });
       } else {
         setProfile(null);
         setLoading(false);
+        initialized = true;
       }
     });
 
-    // Listen for auth changes
+    // Listen for auth changes in background
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
+        // Ignore INITIAL_SESSION if getSession already handled startup
+        if (event === 'INITIAL_SESSION' && initialized) return;
+
         const currentUser = session?.user ?? null;
         setUser(currentUser);
+
         if (currentUser) {
-          setLoading(true);
-          await fetchProfile(currentUser.id);
-          setLoading(false);
+          // If already initialized, update profile in background without resetting loading=true
+          if (!initialized) {
+            setLoading(true);
+            await fetchProfile(currentUser.id);
+            setLoading(false);
+            initialized = true;
+          } else {
+            // Background update without unmounting app tree
+            await fetchProfile(currentUser.id);
+          }
         } else {
           setProfile(null);
           setLoading(false);
+          initialized = true;
         }
       }
     );

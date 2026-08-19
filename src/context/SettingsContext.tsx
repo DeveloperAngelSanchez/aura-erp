@@ -16,6 +16,12 @@ export interface SucursalConfig {
   comision_barbero_default: number;
   metodos_pago: string[];
   metodos_pago_favoritos: string[];
+  mesas_cantidad?: number;
+  mesas_prefijo?: string;
+  ticket_digital_activo: boolean;
+  ticket_ancho: string;
+  ticket_incluir_qr: boolean;
+  ticket_serie_prefijo: string;
   updated_at?: string;
 }
 
@@ -31,6 +37,12 @@ const DEFAULT_CONFIG: SucursalConfig = {
   comision_barbero_default: 0.00,
   metodos_pago: ['efectivo', 'tarjeta', 'transferencia'],
   metodos_pago_favoritos: ['efectivo', 'tarjeta', 'transferencia'],
+  mesas_cantidad: 0,
+  mesas_prefijo: 'MS',
+  ticket_digital_activo: false,
+  ticket_ancho: '80mm',
+  ticket_incluir_qr: true,
+  ticket_serie_prefijo: 'T001',
 };
 
 interface SettingsContextType {
@@ -91,7 +103,6 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       : profile?.sucursal_id;
 
     if (targetSucursalId) {
-      setLoading(true);
       await fetchConfig(targetSucursalId);
     }
   }, [profile?.sucursal_id, impersonating, activeBranchIds]);

@@ -5,6 +5,8 @@ import { supabase } from '../../api/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import { useEmpresa } from '../../context/EmpresaContext';
 import { useLanguage } from '../../context/LanguageContext';
+import type { BusinessRubro } from '../../config/rubrosConfig';
+import { RUBROS_CONFIG } from '../../config/rubrosConfig';
 import { Building2, Plus, Eye, Search, X, AlertCircle, CheckCircle, UserPlus, LogIn } from 'lucide-react';
 
 const translations = {
@@ -81,6 +83,7 @@ export const EmpresaManager: React.FC = () => {
 
   // Create empresa form
   const [formName, setFormName] = useState('');
+  const [formRubro, setFormRubro] = useState<BusinessRubro>('barberia');
   const [formAdminNombre, setFormAdminNombre] = useState('');
   const [formAdminEmail, setFormAdminEmail] = useState('');
   const [formAdminPassword, setFormAdminPassword] = useState('');
@@ -121,10 +124,11 @@ export const EmpresaManager: React.FC = () => {
 
     setCreating(true);
     try {
-      // 1. Create empresa + sucursal in DB
+      // 1. Create empresa + sucursal in DB con rubro
       const { data: dbResult, error: dbError } = await supabase.rpc('crear_empresa_db', {
         p_empresa_nombre: formName,
         p_sucursal_nombre: formBranchName,
+        p_rubro: formRubro,
       });
 
       if (dbError) throw dbError;
@@ -346,6 +350,15 @@ export const EmpresaManager: React.FC = () => {
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t.empresaName}</label>
                 <input type="text" required value={formName} onChange={e => setFormName(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-xs font-bold focus:outline-none focus:border-blue-500" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{lang === 'es' ? 'Rubro / Tipo de Negocio' : 'Business Vertical'}</label>
+                <select value={formRubro} onChange={e => setFormRubro(e.target.value as BusinessRubro)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-xs font-bold focus:outline-none focus:border-blue-500">
+                  {Object.values(RUBROS_CONFIG).map(r => (
+                    <option key={r.id} value={r.id}>{r.label}</option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t.branchName}</label>

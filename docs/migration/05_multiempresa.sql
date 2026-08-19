@@ -41,10 +41,10 @@ BEGIN
     SET empresa_id = v_empresa_id
     WHERE empresa_id IS NULL;
 
-    -- 4c. Asignar rol_sistema a admin@sellora.com
+    -- 4c. Asignar rol_sistema a admin@aura-erp.com
     UPDATE public.perfiles
     SET rol_sistema = 'sistema_admin'
-    WHERE email = 'admin@sellora.com'
+    WHERE email = 'admin@aura-erp.com'
       AND rol_sistema IS NULL;
 END $$;
 

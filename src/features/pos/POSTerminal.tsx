@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../../api/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
@@ -22,6 +22,8 @@ import {
   History,
   User,
   UserPlus,
+  ArrowLeft,
+  Utensils,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CartPanel } from './CartPanel';
@@ -29,6 +31,10 @@ import type { CartItem } from './CartPanel';
 import { CatalogPanel } from './CatalogPanel';
 import { CashMovementModal } from './CashMovementModal';
 import { SalesHistoryModal } from './SalesHistoryModal';
+import { TableManagerView } from './TableManagerView';
+import { useMesas } from '../../hooks/useMesas';
+import { DigitalTicketView } from '../../components/ticket/DigitalTicketView';
+import type { TicketItem } from '../../components/ticket/DigitalTicketView';
 
 interface Item {
   id: string;
@@ -186,8 +192,8 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
   const { profile, signOut } = useAuth();
   const { lang, toggleLanguage } = useLanguage();
   const { activeTurn, openTurn } = useCash();
-  const { impersonating, activeBranchIds } = useEmpresa();
-  const { formatMoney, config } = useSettings();
+  const { impersonating, activeBranchIds, rubroConfig } = useEmpresa();
+  const { formatMoney, config, refreshConfig } = useSettings();
   const navigate = useNavigate();
   const t = translations[lang];
 
@@ -195,6 +201,10 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'producto' | 'servicio' | 'kit'>('all');
+
+  const isMesasMode = rubroConfig.features.gestionMesas;
+  const mesasHook = useMesas();
+  const [currentView, setCurrentView] = useState<'tables' | 'pos'>('tables');
 
   const CART_STORAGE_KEY = 'aura_pos_attentions';
 
@@ -217,7 +227,36 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
     clienteNombre: string;
     itemsCount: number;
     pagos: { metodo_pago: string; monto: number }[];
+    cartItems: TicketItem[];
   } | null>(null);
+
+  const [sucursalInfo, setSucursalInfo] = useState<{ nombre: string; ruc: string; direccion: string; telefono: string } | null>(null);
+
+  const fetchSucursalInfo = useCallback(async () => {
+    const targetBranchId = isHistoricalMode && historicalTurnData?.sucursal_id
+      ? historicalTurnData.sucursal_id
+      : (impersonating && activeBranchIds.length > 0 ? activeBranchIds[0] : profile?.sucursal_id);
+
+    if (!targetBranchId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('sucursales')
+        .select('nombre, ruc, direccion, telefono')
+        .eq('id', targetBranchId)
+        .single();
+
+      if (!error && data) {
+        setSucursalInfo(data);
+      }
+    } catch (err) {
+      console.error('Error fetching sucursal details for POS:', err);
+    }
+  }, [profile?.sucursal_id, impersonating, activeBranchIds, isHistoricalMode, historicalTurnData]);
+
+  useEffect(() => {
+    fetchSucursalInfo();
+  }, [fetchSucursalInfo]);
 
   useEffect(() => {
     try {
@@ -244,12 +283,12 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Auto-create default Atención 1 on mount if empty
+  // Auto-create default Atención 1 on mount if empty (only for non-mesas mode)
   useEffect(() => {
-    if (attentions.length === 0) {
+    if (!isMesasMode && attentions.length === 0) {
       const defaultAtt: Attention = {
         id: crypto.randomUUID(),
-        customerName: 'Atención 1',
+        customerName: `${rubroConfig.labels.attentionTabPrefix} 1`,
         cart: [],
         barberoId: selectedBarberoId,
         createdAt: Date.now(),
@@ -259,26 +298,41 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
       setAttentions([defaultAtt]);
       setActiveAttentionId(defaultAtt.id);
     }
-  }, []);
+  }, [rubroConfig.labels.attentionTabPrefix, isMesasMode]);
 
   useEffect(() => {
-    if (!activeAttentionId && attentions.length > 0) {
+    if (!isMesasMode && !activeAttentionId && attentions.length > 0) {
       setActiveAttentionId(attentions[0].id);
     }
-  }, [attentions, activeAttentionId]);
+  }, [attentions, activeAttentionId, isMesasMode]);
 
   // Sync attention barbero changes to selectedBarberoId
   const activeAttention = attentions.find(a => a.id === activeAttentionId);
   useEffect(() => {
-    if (activeAttention) {
+    if (!isMesasMode && activeAttention) {
       setSelectedBarberoId(activeAttention.barberoId);
     }
-  }, [activeAttention?.id]);
+  }, [activeAttention?.id, isMesasMode]);
 
   const getCartKey = (itemId: string, presNombre?: string) => presNombre ? `${itemId}::${presNombre}` : itemId;
 
-  const getActiveCart = (): CartItem[] => activeAttention?.cart || [];
+  const getActiveCart = (): CartItem[] => {
+    if (isMesasMode) {
+      return mesasHook.activeMesa?.cart_data || [];
+    }
+    return activeAttention?.cart || [];
+  };
+
   const getActiveCartTotal = () => getActiveCart().reduce((sum, c) => sum + (c.cantidad * (c.precioUnitario ?? c.item.precio_venta)), 0);
+
+  const handleSelectMesa = (mesaId: string) => {
+    mesasHook.setActiveMesaId(mesaId);
+    const targetMesa = mesasHook.mesas.find(m => m.id === mesaId);
+    if (targetMesa && targetMesa.estado === 'disponible') {
+      mesasHook.abrirMesa(mesaId, activeTurn?.id || '', selectedBarberoId);
+    }
+    setCurrentView('pos');
+  };
 
   const updateAttention = (attentionId: string, updates: Partial<Attention>) => {
     setAttentions(prev => prev.map(a => a.id === attentionId ? { ...a, ...updates } : a));
@@ -313,7 +367,7 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
   const handleConfirmNewAttention = () => {
     const newAttention: Attention = {
       id: crypto.randomUUID(),
-      customerName: newAttClienteNombre.trim() || `Atención ${attentions.length + 1}`,
+      customerName: newAttClienteNombre.trim() || `${rubroConfig.labels.attentionTabPrefix} ${attentions.length + 1}`,
       cart: [],
       barberoId: selectedBarberoId,
       createdAt: Date.now(),
@@ -390,13 +444,17 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
     return () => clearTimeout(timer);
   }, [newAttClienteNombre, newAttClienteExistente, impersonating, activeBranchIds, profile?.sucursal_id]);
 
-  // Checkout Customer Search State
+  // Checkout Customer Search & Local State
+  const [checkoutClienteNombre, setCheckoutClienteNombre] = useState('');
+  const [checkoutGuardarCliente, setCheckoutGuardarCliente] = useState(false);
+  const [checkoutClienteExistente, setCheckoutClienteExistente] = useState(false);
+  const [checkoutClienteId, setCheckoutClienteId] = useState<string | null>(null);
   const [checkoutClienteSuggestions, setCheckoutClienteSuggestions] = useState<{ id: string; nombre: string }[]>([]);
   const [showCheckoutSuggestions, setShowCheckoutSuggestions] = useState(false);
 
   useEffect(() => {
-    const term = activeAttention?.clienteNombre?.trim() || '';
-    if (!term || activeAttention?.clienteExistente) { setCheckoutClienteSuggestions([]); setShowCheckoutSuggestions(false); return; }
+    const term = checkoutClienteNombre.trim();
+    if (!term || checkoutClienteExistente) { setCheckoutClienteSuggestions([]); setShowCheckoutSuggestions(false); return; }
     const timer = setTimeout(async () => {
       const branchIds = impersonating ? activeBranchIds : (profile?.sucursal_id ? [profile.sucursal_id] : []);
       let query = supabase
@@ -414,7 +472,7 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
       }
     }, 250);
     return () => clearTimeout(timer);
-  }, [activeAttention?.clienteNombre, activeAttention?.clienteExistente, impersonating, activeBranchIds, profile?.sucursal_id]);
+  }, [checkoutClienteNombre, checkoutClienteExistente, impersonating, activeBranchIds, profile?.sucursal_id]);
 
   // Checkout & Split Payments State
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
@@ -525,6 +583,48 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
   };
 
   const addToCart = (item: Item, presentacionNombre?: string) => {
+    if (isMesasMode) {
+      if (!mesasHook.activeMesaId) return;
+      const currentCart = mesasHook.activeMesa?.cart_data || [];
+      const cartKey = getCartKey(item.id, presentacionNombre);
+      const existing = currentCart.find(c => getCartKey(c.item.id, c.presentacionNombre) === cartKey);
+      const currentQty = existing ? existing.cantidad : 0;
+
+      if (presentacionNombre) {
+        const pres = item.item_presentaciones?.find(p => p.nombre === presentacionNombre);
+        if (pres && pres.inventariable && currentQty >= pres.stock_actual) {
+          alert(lang === 'es' ? 'No hay suficiente inventario disponible.' : 'Not enough stock available.');
+          return;
+        }
+      } else if (item.tipo === 'producto' && item.inventariable !== false) {
+        if (currentQty >= item.stock_actual) {
+          alert(lang === 'es' ? 'No hay suficiente inventario disponible.' : 'Not enough stock available.');
+          return;
+        }
+      } else if (item.tipo === 'kit' && item.inventariable === true) {
+        const kitStock = item.vista_stock_kits?.stock_calculado ?? 0;
+        if (kitStock > 0 && currentQty >= kitStock) {
+          alert(lang === 'es' ? 'No hay suficiente inventario disponible.' : 'Not enough stock available.');
+          return;
+        }
+      }
+
+      let newCart: CartItem[];
+      if (existing) {
+        newCart = currentCart.map(c => getCartKey(c.item.id, c.presentacionNombre) === cartKey ? { ...c, cantidad: c.cantidad + 1 } : c);
+      } else {
+        const pres = item.item_presentaciones?.find(p => p.nombre === presentacionNombre);
+        newCart = [...currentCart, {
+          item,
+          cantidad: 1,
+          presentacionNombre,
+          precioUnitario: pres?.precio_venta,
+        }];
+      }
+      mesasHook.updateMesaCart(mesasHook.activeMesaId, newCart);
+      return;
+    }
+
     const attention = getOrCreateAttention();
     const currentCart = attention.cart;
     const cartKey = getCartKey(item.id, presentacionNombre);
@@ -566,6 +666,44 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
   };
 
   const updateCartQty = (cartKey: string, delta: number) => {
+    if (isMesasMode) {
+      if (!mesasHook.activeMesaId || !mesasHook.activeMesa) return;
+      const currentCart = mesasHook.activeMesa.cart_data || [];
+      const existing = currentCart.find(c => getCartKey(c.item.id, c.presentacionNombre) === cartKey);
+      if (!existing) return;
+
+      const newQty = existing.cantidad + delta;
+      if (newQty <= 0) {
+        mesasHook.updateMesaCart(mesasHook.activeMesaId, currentCart.filter(c => getCartKey(c.item.id, c.presentacionNombre) !== cartKey));
+        return;
+      }
+
+      if (delta > 0) {
+        if (existing.presentacionNombre) {
+          const pres = existing.item.item_presentaciones?.find(p => p.nombre === existing.presentacionNombre);
+          if (pres && pres.inventariable && newQty > pres.stock_actual) {
+            alert(lang === 'es' ? 'No hay suficiente inventario disponible.' : 'Not enough stock available.');
+            return;
+          }
+        } else if (existing.item.tipo === 'producto' && existing.item.inventariable !== false) {
+          if (newQty > existing.item.stock_actual) {
+            alert(lang === 'es' ? 'No hay suficiente inventario disponible.' : 'Not enough stock available.');
+            return;
+          }
+        } else if (existing.item.tipo === 'kit' && existing.item.inventariable === true) {
+          const kitStock = existing.item.vista_stock_kits?.[0]?.stock_calculado ?? existing.item.vista_stock_kits?.stock_calculado ?? 0;
+          if (kitStock > 0 && newQty > kitStock) {
+            alert(lang === 'es' ? 'No hay suficiente inventario disponible.' : 'Not enough stock available.');
+            return;
+          }
+        }
+      }
+
+      const newCart = currentCart.map(c => getCartKey(c.item.id, c.presentacionNombre) === cartKey ? { ...c, cantidad: newQty } : c);
+      mesasHook.updateMesaCart(mesasHook.activeMesaId, newCart);
+      return;
+    }
+
     if (!activeAttention) return;
     const currentCart = activeAttention.cart;
     const existing = currentCart.find(c => getCartKey(c.item.id, c.presentacionNombre) === cartKey);
@@ -602,16 +740,45 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
   };
 
   const removeFromCart = (cartKey: string) => {
+    if (isMesasMode) {
+      if (!mesasHook.activeMesaId || !mesasHook.activeMesa) return;
+      const currentCart = mesasHook.activeMesa.cart_data || [];
+      mesasHook.updateMesaCart(mesasHook.activeMesaId, currentCart.filter(c => getCartKey(c.item.id, c.presentacionNombre) !== cartKey));
+      return;
+    }
+
     if (!activeAttention) return;
     updateAttention(activeAttention.id, { cart: activeAttention.cart.filter(c => getCartKey(c.item.id, c.presentacionNombre) !== cartKey) });
   };
 
   const getCartTotal = () => getActiveCartTotal();
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
+    await refreshConfig();
+    await fetchSucursalInfo();
     const activeCart = getActiveCart();
     if (activeCart.length === 0 || (!activeTurn && !isHistoricalMode)) return;
     const total = getActiveCartTotal();
+
+    const initNombre = isMesasMode
+      ? (mesasHook.activeMesa?.cliente_nombre || '')
+      : (activeAttention?.clienteNombre || '');
+    const initClienteId = isMesasMode
+      ? (mesasHook.activeMesa?.cliente_id || null)
+      : (activeAttention?.clienteId || null);
+    const initGuardar = isMesasMode
+      ? false
+      : Boolean(activeAttention?.guardarCliente);
+    const initExistente = isMesasMode
+      ? Boolean(mesasHook.activeMesa?.cliente_id)
+      : Boolean(activeAttention?.clienteExistente || activeAttention?.clienteId);
+
+    setCheckoutClienteNombre(initNombre);
+    setCheckoutGuardarCliente(initGuardar);
+    setCheckoutClienteExistente(initExistente);
+    setCheckoutClienteId(initClienteId);
+    setCheckoutClienteSuggestions([]);
+    setShowCheckoutSuggestions(false);
 
     const defaultMethod = config?.metodos_pago_favoritos?.[0] || 'efectivo';
     setPagos([{ metodo_pago: defaultMethod, monto: total.toString() }]);
@@ -620,7 +787,8 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
 
   const submitCheckout = async () => {
     const activeCart = getActiveCart();
-    if (activeCart.length === 0 || (!activeTurn && !isHistoricalMode) || !activeAttention) return;
+    if (activeCart.length === 0 || (!activeTurn && !isHistoricalMode)) return;
+    if (!isMesasMode && !activeAttention) return;
 
     const totalVenta = getCartTotal();
     const totalIngresado = pagos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0);
@@ -670,7 +838,6 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
       };
     }).filter(p => p.monto > 0.005); // Excluir líneas que quedaron en 0
 
-    // Si por una extraña razón no queda ningún pago, agregar una línea por defecto
     if (salePagos.length === 0) {
       salePagos.push({ metodo_pago: 'efectivo', monto: 0 });
     }
@@ -686,18 +853,20 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
         throw new Error('No hay un turno válido seleccionado para registrar la venta.');
       }
 
-      let clienteId: string | null = activeAttention.clienteId || null;
-      if (!clienteId && activeAttention.clienteNombre.trim()) {
-        if (activeAttention.guardarCliente) {
+      const clienteNombreActual = checkoutClienteNombre.trim();
+      let clienteId: string | null = checkoutClienteId;
+      const guardarClienteActual = checkoutGuardarCliente;
+
+      if (!clienteId && clienteNombreActual) {
+        if (guardarClienteActual) {
           const { data: cid, error: cErr } = await supabase.rpc('buscar_o_crear_cliente', {
-            p_nombre: activeAttention.clienteNombre.trim(),
+            p_nombre: clienteNombreActual,
             p_sucursal_id: targetBranchId,
           });
           if (!cErr && cid) clienteId = cid;
         } else {
-          // Look up if client already exists by name
           const branchIds = impersonating ? activeBranchIds : (profile?.sucursal_id ? [profile.sucursal_id] : []);
-          let query = supabase.from('clientes').select('id').ilike('nombre', activeAttention.clienteNombre.trim()).limit(1);
+          let query = supabase.from('clientes').select('id').ilike('nombre', clienteNombreActual).limit(1);
           if (branchIds.length > 0) {
             query = query.in('sucursal_id', branchIds);
           }
@@ -717,7 +886,7 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
         p_pagos: salePagos,
         p_barbero_id: selectedBarberoId || null,
         p_cliente_id: clienteId,
-        p_cliente_nombre: activeAttention.clienteNombre.trim() || null,
+        p_cliente_nombre: clienteNombreActual.trim() || null,
       });
 
       if (error) throw error;
@@ -733,33 +902,48 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
             total: totalVenta,
             pagos: salePagos,
             barbero_id: selectedBarberoId || null,
-            cliente_nombre: activeAttention.clienteNombre.trim() || null,
+            cliente_nombre: clienteNombreActual.trim() || null,
           },
         });
       }
 
       const barberoObj = barberos.find(b => b.id === selectedBarberoId);
       const barberoNombre = barberoObj ? barberoObj.nombre : (lang === 'es' ? 'Atención General' : 'General Staff');
-      const clienteNombre = activeAttention.clienteNombre.trim() || (lang === 'es' ? 'Cliente General' : 'General Customer');
+      const clienteNombreFinal = clienteNombreActual.trim() || (lang === 'es' ? 'Cliente General' : 'General Customer');
       const itemsCount = activeCart.reduce((sum, c) => sum + c.cantidad, 0);
+
+      const ticketItems: TicketItem[] = activeCart.map(c => ({
+        nombre: c.item.nombre,
+        cantidad: c.cantidad,
+        precioUnitario: c.precioUnitario ?? c.item.precio_venta,
+        presentacionNombre: c.presentacionNombre,
+      }));
+
+      await fetchSucursalInfo();
 
       setSuccessReceiptData({
         total: totalVenta,
         vuelto,
         barberoNombre,
-        clienteNombre,
+        clienteNombre: clienteNombreFinal,
         itemsCount,
         pagos: salePagos,
+        cartItems: ticketItems,
       });
 
-      // Remove the completed attention
-      const remaining = attentions.filter(a => a.id !== activeAttention!.id);
-      setAttentions(remaining);
-      if (remaining.length > 0) {
-        setActiveAttentionId(remaining[0].id);
-      } else {
-        setActiveAttentionId(null);
+      if (isMesasMode && mesasHook.activeMesaId) {
+        await mesasHook.cerrarMesa(mesasHook.activeMesaId);
+        setCurrentView('tables');
+      } else if (activeAttention) {
+        const remaining = attentions.filter(a => a.id !== activeAttention.id);
+        setAttentions(remaining);
+        if (remaining.length > 0) {
+          setActiveAttentionId(remaining[0].id);
+        } else {
+          setActiveAttentionId(null);
+        }
       }
+
       setShowCheckoutModal(false);
       loadCatalog();
     } catch (err: any) {
@@ -796,7 +980,28 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="Aura" className="w-8 h-8 object-contain rounded-lg" />
           <div>
-            <h1 className="font-extrabold text-base text-slate-900 tracking-tight">{t.posTitle}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-extrabold text-base text-slate-900 tracking-tight">{t.posTitle}</h1>
+
+              {isMesasMode && currentView === 'pos' && (
+                <button
+                  onClick={() => setCurrentView('tables')}
+                  className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
+                  title="Volver al Salón de Mesas"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Volver a Mesas</span>
+                </button>
+              )}
+
+              {isMesasMode && currentView === 'pos' && mesasHook.activeMesa && (
+                <span className="text-xs font-extrabold px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-800 font-mono flex items-center gap-1">
+                  <Utensils className="w-3 h-3 text-blue-600" />
+                  <span>Mesa: {mesasHook.activeMesa.nombre}</span>
+                </span>
+              )}
+            </div>
+
             {isHistoricalMode ? (
               <p className="text-[10px] text-amber-700 font-bold flex items-center gap-1 mt-0.5 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
@@ -884,61 +1089,72 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
             </button>
           </div>
         </div>
+      ) : isMesasMode && currentView === 'tables' ? (
+        <TableManagerView
+          mesas={mesasHook.mesas}
+          loading={mesasHook.loading}
+          onSelectMesa={handleSelectMesa}
+          onRefresh={mesasHook.loadMesas}
+          formatMoney={formatMoney}
+          onOpenSettings={() => navigate('/admin/settings')}
+        />
       ) : (
         <>
-          {/* Attention Tabs Bar */}
-          <div className="flex items-center bg-white border-b border-slate-200 px-3 py-1.5 gap-1 overflow-x-auto">
-            {attentions.map((att) => {
-              const isActive = att.id === activeAttentionId;
-              const itemCount = att.cart.reduce((s, c) => s + c.cantidad, 0);
-              return (
-                <div
-                  key={att.id}
-                  className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${isActive
-                      ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-sm'
-                      : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-transparent hover:border-slate-200'
-                    }`}
-                  onClick={() => setActiveAttentionId(att.id)}
-                >
-                  <span
-                    contentEditable={isActive}
-                    suppressContentEditableWarning
-                    onBlur={(e) => handleRenameAttention(att.id, e.currentTarget.textContent || att.customerName)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        (e.target as HTMLElement).blur();
-                      }
-                    }}
-                    className="outline-none border-b border-dashed border-transparent focus:border-blue-400 max-w-[120px] truncate"
-                    title={lang === 'es' ? 'Click para renombrar' : 'Click to rename'}
+          {/* Attention Tabs Bar (Solo en modo barbería / general) */}
+          {!isMesasMode && (
+            <div className="flex items-center bg-white border-b border-slate-200 px-3 py-1.5 gap-1 overflow-x-auto">
+              {attentions.map((att) => {
+                const isActive = att.id === activeAttentionId;
+                const itemCount = att.cart.reduce((s, c) => s + c.cantidad, 0);
+                return (
+                  <div
+                    key={att.id}
+                    className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${isActive
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-sm'
+                        : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-transparent hover:border-slate-200'
+                      }`}
+                    onClick={() => setActiveAttentionId(att.id)}
                   >
-                    {att.customerName}
-                  </span>
-                  {itemCount > 0 && (
-                    <span className={`text-[10px] font-mono ${isActive ? 'text-blue-500' : 'text-slate-400'}`}>
-                      ({itemCount})
+                    <span
+                      contentEditable={isActive}
+                      suppressContentEditableWarning
+                      onBlur={(e) => handleRenameAttention(att.id, e.currentTarget.textContent || att.customerName)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          (e.target as HTMLElement).blur();
+                        }
+                      }}
+                      className="outline-none border-b border-dashed border-transparent focus:border-blue-400 max-w-[120px] truncate"
+                      title={lang === 'es' ? 'Click para renombrar' : 'Click to rename'}
+                    >
+                      {att.customerName}
                     </span>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleCloseAttention(att.id); }}
-                    className="opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded p-0.5 text-slate-400 hover:text-rose-600 transition-all cursor-pointer"
-                    title={lang === 'es' ? 'Cerrar atención' : 'Close attention'}
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              );
-            })}
-            <button
-              onClick={handleAddAttention}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-dashed border-slate-300 hover:border-blue-300 transition-all whitespace-nowrap cursor-pointer"
-              title={lang === 'es' ? 'Nueva atención' : 'New attention'}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{lang === 'es' ? 'Nueva' : 'New'}</span>
-            </button>
-          </div>
+                    {itemCount > 0 && (
+                      <span className={`text-[10px] font-mono ${isActive ? 'text-blue-500' : 'text-slate-400'}`}>
+                        ({itemCount})
+                      </span>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleCloseAttention(att.id); }}
+                      className="opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded p-0.5 text-slate-400 hover:text-rose-600 transition-all cursor-pointer"
+                      title={lang === 'es' ? 'Cerrar atención' : 'Close attention'}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+              <button
+                onClick={handleAddAttention}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-dashed border-slate-300 hover:border-blue-300 transition-all whitespace-nowrap cursor-pointer"
+                title={rubroConfig.labels.newAttentionTitle}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">+{rubroConfig.labels.attentionTabPrefix}</span>
+              </button>
+            </div>
+          )}
 
           {/* Mobile Tab Bar — visible only on screens < lg */}
           <div className="lg:hidden flex bg-white border-b border-slate-200">
@@ -1006,7 +1222,7 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h2 className="text-sm font-bold text-slate-950 flex items-center gap-2">
                 <UserPlus className="w-4.5 h-4.5 text-blue-600" />
-                <span>{lang === 'es' ? 'Nueva Atención' : 'New Attention'}</span>
+                <span>{rubroConfig.labels.newAttentionTitle}</span>
               </h2>
               <button onClick={() => setShowNewAttentionModal(false)}
                 className="text-slate-400 hover:text-slate-600 focus:outline-none">
@@ -1016,7 +1232,7 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
             <div className="space-y-4">
               <div className="space-y-1 relative">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  {lang === 'es' ? 'Cliente (opcional)' : 'Customer (optional)'}
+                  {lang === 'es' ? 'Nombre o Referencia (opcional)' : 'Name or Reference (optional)'}
                 </label>
                 <input type="text" value={newAttClienteNombre}
                   onChange={(e) => { 
@@ -1027,7 +1243,7 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
                   }}
                   onFocus={() => { if (clienteSuggestions.length > 0) setShowSuggestions(true); }}
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                  placeholder={t.clientePlaceholder || 'Nombre del cliente...'}
+                  placeholder={rubroConfig.labels.newAttentionPlaceholder}
                   className="w-full px-4 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-blue-500 transition-all text-xs shadow-sm"
                 />
                 {showSuggestions && (
@@ -1076,7 +1292,7 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
               </button>
               <button onClick={handleConfirmNewAttention}
                 className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer">
-                {lang === 'es' ? 'Crear Atención' : 'Create Attention'}
+                {rubroConfig.labels.newAttentionTitle}
               </button>
             </div>
           </div>
@@ -1152,78 +1368,96 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
               </button>
             </div>
 
-            {/* Cliente Section — always visible, above scroll */}
-            {activeAttention && (
-              <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 space-y-2 relative">
-                <div className="relative">
-                  <input type="text"
-                    value={activeAttention.clienteNombre || ''}
-                    onChange={(e) => {
-                      updateAttention(activeAttention.id, { clienteNombre: e.target.value, clienteExistente: false });
-                      setShowCheckoutSuggestions(false);
-                    }}
-                    onFocus={() => { if (!activeAttention.clienteExistente && checkoutClienteSuggestions.length > 0) setShowCheckoutSuggestions(true); }}
-                    onBlur={() => setTimeout(() => setShowCheckoutSuggestions(false), 200)}
-                    placeholder={t.clientePlaceholder || 'Buscar cliente por nombre...'}
-                    className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-blue-500 text-xs font-semibold text-slate-800 shadow-2xs placeholder:text-slate-400"
-                  />
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
-
-                  {/* Suggestions List Dropdown */}
-                  {showCheckoutSuggestions && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-150">
-                      {checkoutClienteSuggestions.map((c) => (
-                        <button key={c.id} type="button"
-                          onMouseDown={() => {
-                            updateAttention(activeAttention.id, { clienteNombre: c.nombre, guardarCliente: false, clienteExistente: true });
-                            setShowCheckoutSuggestions(false);
-                          }}
-                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-800 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center justify-between cursor-pointer"
-                        >
-                          <span className="truncate">{c.nombre}</span>
-                          <span className="text-[9px] font-extrabold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 uppercase tracking-wider shrink-0">
-                            Registrado
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <label className={`flex items-center gap-2 ${activeAttention.clienteExistente ? '' : 'cursor-pointer select-none'}`}>
-                  <button 
-                    type="button" 
-                    role="checkbox" 
-                    aria-checked={!!activeAttention.guardarCliente}
-                    disabled={!!activeAttention.clienteExistente}
-                    onClick={() => {
-                      if (!activeAttention.clienteExistente) {
-                        updateAttention(activeAttention.id, { guardarCliente: !activeAttention.guardarCliente });
-                      }
-                    }}
-                    className={`relative w-9 h-5 rounded-full transition-all shrink-0 ${
-                      activeAttention.clienteExistente 
-                        ? 'bg-slate-200 cursor-not-allowed' 
-                        : activeAttention.guardarCliente 
-                          ? 'bg-blue-600' 
-                          : 'bg-slate-300'
-                    }`}
-                  >
-                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
-                      activeAttention.guardarCliente ? 'translate-x-4' : ''
-                    }`} />
-                  </button>
-                  <span className={`text-[10px] font-bold tracking-wide ${
-                    activeAttention.clienteExistente ? 'text-slate-400' : 'text-slate-500'
-                  }`}>
-                    {activeAttention.clienteExistente
-                      ? (lang === 'es' ? 'Cliente ya registrado' : 'Existing customer')
-                      : (t.guardarCliente || 'Guardar cliente nuevo')
+            {/* Cliente Section — siempre visible */}
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 space-y-2 relative">
+              <div className="relative">
+                <input type="text"
+                  value={checkoutClienteNombre}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCheckoutClienteNombre(val);
+                    setCheckoutClienteExistente(false);
+                    setCheckoutClienteId(null);
+                    if (activeAttention) {
+                      updateAttention(activeAttention.id, { clienteNombre: val, clienteExistente: false });
                     }
-                  </span>
-                </label>
+                  }}
+                  onFocus={() => {
+                    if (!checkoutClienteExistente && checkoutClienteSuggestions.length > 0) {
+                      setShowCheckoutSuggestions(true);
+                    }
+                  }}
+                  onBlur={() => setTimeout(() => setShowCheckoutSuggestions(false), 200)}
+                  placeholder={t.clientePlaceholder || 'Buscar cliente por nombre...'}
+                  className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-blue-500 text-xs font-semibold text-slate-800 shadow-2xs placeholder:text-slate-400"
+                />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+
+                {/* Suggestions List Dropdown */}
+                {showCheckoutSuggestions && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-150">
+                    {checkoutClienteSuggestions.map((c) => (
+                      <button key={c.id} type="button"
+                        onMouseDown={() => {
+                          setCheckoutClienteNombre(c.nombre);
+                          setCheckoutClienteId(c.id);
+                          setCheckoutClienteExistente(true);
+                          setCheckoutGuardarCliente(false);
+                          setShowCheckoutSuggestions(false);
+                          if (activeAttention) {
+                            updateAttention(activeAttention.id, { clienteNombre: c.nombre, clienteId: c.id, clienteExistente: true, guardarCliente: false });
+                          }
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-800 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center justify-between cursor-pointer"
+                      >
+                        <span className="truncate">{c.nombre}</span>
+                        <span className="text-[9px] font-extrabold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 uppercase tracking-wider shrink-0">
+                          Registrado
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* Toggle "Guardar cliente nuevo" — SIEMPRE VISIBLE */}
+              <label className={`flex items-center gap-2 ${checkoutClienteExistente ? '' : 'cursor-pointer select-none'}`}>
+                <button 
+                  type="button" 
+                  role="checkbox" 
+                  aria-checked={checkoutGuardarCliente}
+                  disabled={checkoutClienteExistente}
+                  onClick={() => {
+                    if (!checkoutClienteExistente) {
+                      const nextGuardar = !checkoutGuardarCliente;
+                      setCheckoutGuardarCliente(nextGuardar);
+                      if (activeAttention) {
+                        updateAttention(activeAttention.id, { guardarCliente: nextGuardar });
+                      }
+                    }
+                  }}
+                  className={`relative w-9 h-5 rounded-full transition-all shrink-0 ${
+                    checkoutClienteExistente 
+                      ? 'bg-slate-200 cursor-not-allowed' 
+                      : checkoutGuardarCliente 
+                        ? 'bg-blue-600' 
+                        : 'bg-slate-300'
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+                    checkoutGuardarCliente ? 'translate-x-4' : ''
+                  }`} />
+                </button>
+                <span className={`text-[10px] font-bold tracking-wide ${
+                  checkoutClienteExistente ? 'text-slate-400' : 'text-slate-500'
+                }`}>
+                  {checkoutClienteExistente
+                    ? (lang === 'es' ? 'Cliente ya registrado' : 'Existing customer')
+                    : (t.guardarCliente || 'Guardar cliente nuevo')
+                  }
+                </span>
+              </label>
+            </div>
 
             {/* Scrollable Form Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -1493,10 +1727,10 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
             onClick={() => setSuccessReceiptData(null)} />
 
           {/* Slide-over panel coincidiendo con el ancho del Checkout/CartPanel (w-96) */}
-          <div className="fixed inset-y-0 right-0 z-[110] w-full lg:w-96 bg-white border-l border-slate-200 shadow-2xl flex flex-col justify-between h-full animate-in slide-in-from-right duration-200">
+          <div className="fixed inset-y-0 right-0 z-[110] w-full lg:w-96 bg-white border-l border-slate-200 shadow-2xl flex flex-col justify-between h-full h-[100dvh] animate-in slide-in-from-right duration-200">
             
-            {/* Header */}
-            <div className="px-6 py-4 pt-[max(1rem,env(safe-area-inset-top))] border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
+            {/* Header con Safe Area Insets */}
+            <div className="px-6 py-4 pt-[max(1rem,env(safe-area-inset-top))] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
               <h2 className="text-sm font-bold text-slate-950 flex items-center gap-2">
                 <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600" />
                 <span>{lang === 'es' ? 'Venta Procesada' : 'Sale Completed'}</span>
@@ -1507,105 +1741,126 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
               </button>
             </div>
 
-            {/* Content Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              
-              {/* Icon & Title Badge */}
-              <div className="text-center space-y-3 pt-2">
-                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto ring-8 ring-emerald-50 shadow-2xs">
-                  <CheckCircle2 className="w-10 h-10" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-black text-slate-950">
-                    {lang === 'es' ? '¡Venta Procesada con Éxito!' : 'Sale Processed Successfully!'}
-                  </h2>
-                  <p className="text-xs text-slate-400 font-medium mt-0.5">
-                    {lang === 'es' ? 'Comprobante y registro guardados en caja' : 'Receipt and record stored in shift register'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Ticket Card */}
-              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 space-y-4 font-sans shadow-2xs">
-                
-                {/* Total & Change */}
-                <div className="flex justify-between items-baseline border-b border-slate-200/80 pb-3">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      {lang === 'es' ? 'Total Cobrado' : 'Total Paid'}
-                    </span>
-                    <span className="text-2xl font-black font-mono text-slate-900">
-                      {formatMoney(successReceiptData.total)}
-                    </span>
-                  </div>
-                  {successReceiptData.vuelto > 0 && (
-                    <div className="text-right bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
-                      <span className="text-[9px] font-extrabold uppercase text-emerald-600 block">
-                        {lang === 'es' ? 'Vuelto Entregado' : 'Change Given'}
-                      </span>
-                      <span className="text-sm font-black font-mono text-emerald-800">
-                        {formatMoney(successReceiptData.vuelto)}
-                      </span>
+            {/* Content Body: Digital Ticket or Classic Summary */}
+            {config.ticket_digital_activo ? (
+              <DigitalTicketView
+                lang={lang}
+                onClose={() => setSuccessReceiptData(null)}
+                data={{
+                  razonSocial: sucursalInfo?.nombre || 'Mi Empresa',
+                  ruc: sucursalInfo?.ruc || '',
+                  direccion: sucursalInfo?.direccion || '',
+                  telefono: sucursalInfo?.telefono || '',
+                  seriePrefijo: config.ticket_serie_prefijo || 'T001',
+                  correlativo: config.ticket_correlativo_inicial || 1,
+                  fechaEmision: new Date(),
+                  cajeroNombre: profile?.nombre || 'Cajero',
+                  clienteNombre: successReceiptData.clienteNombre,
+                  clienteDocumento: '',
+                  items: successReceiptData.cartItems,
+                  impuestoPorcentaje: Number(config.impuesto_porcentaje) || 0,
+                  totalVenta: successReceiptData.total,
+                  pagos: successReceiptData.pagos,
+                  vuelto: successReceiptData.vuelto,
+                  encabezado: config.ticket_encabezado || '',
+                  pie: config.ticket_pie || '',
+                  monedaSimbolo: config.moneda_simbolo || 'S/.',
+                  incluirQR: config.ticket_incluir_qr ?? true,
+                  ancho: (config.ticket_ancho === '58mm' ? '58mm' : '80mm'),
+                }}
+              />
+            ) : (
+              <>
+                {/* Classic Content Body */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                  
+                  {/* Icon & Title Badge */}
+                  <div className="text-center space-y-3 pt-2">
+                    <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto ring-8 ring-emerald-50 shadow-2xs">
+                      <CheckCircle2 className="w-10 h-10" />
                     </div>
-                  )}
-                </div>
+                    <div>
+                      <h2 className="text-lg font-black text-slate-950">
+                        {lang === 'es' ? '¡Venta Procesada con Éxito!' : 'Sale Processed Successfully!'}
+                      </h2>
+                      <p className="text-xs text-slate-400 font-medium mt-0.5">
+                        {lang === 'es' ? 'Comprobante y registro guardados en caja' : 'Receipt and record stored in shift register'}
+                      </p>
+                    </div>
+                  </div>
 
-                {/* Details Grid */}
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between text-slate-600">
-                    <span className="font-semibold text-slate-400">{lang === 'es' ? 'Atendido por:' : 'Staff:'}</span>
-                    <span className="font-bold text-slate-900">{successReceiptData.barberoNombre}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span className="font-semibold text-slate-400">{lang === 'es' ? 'Cliente:' : 'Customer:'}</span>
-                    <span className="font-bold text-slate-900">{successReceiptData.clienteNombre}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span className="font-semibold text-slate-400">{lang === 'es' ? 'Total Ítems:' : 'Total Items:'}</span>
-                    <span className="font-bold font-mono text-slate-900">{successReceiptData.itemsCount}</span>
-                  </div>
-                </div>
+                  {/* Ticket Card */}
+                  <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 space-y-4 font-sans shadow-2xs">
+                    
+                    {/* Total & Change */}
+                    <div className="flex justify-between items-baseline border-b border-slate-200/80 pb-3">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          {lang === 'es' ? 'Total Cobrado' : 'Total Paid'}
+                        </span>
+                        <span className="text-2xl font-black font-mono text-slate-900">
+                          {formatMoney(successReceiptData.total)}
+                        </span>
+                      </div>
+                      {successReceiptData.vuelto > 0 && (
+                        <div className="text-right bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                          <span className="text-[9px] font-extrabold uppercase text-emerald-600 block">
+                            {lang === 'es' ? 'Vuelto Entregado' : 'Change Given'}
+                          </span>
+                          <span className="text-sm font-black font-mono text-emerald-800">
+                            {formatMoney(successReceiptData.vuelto)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
 
-                {/* Payment breakdown */}
-                <div className="border-t border-slate-200/80 pt-3 space-y-1.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    {lang === 'es' ? 'Desglose de Pago' : 'Payment Breakdown'}
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {successReceiptData.pagos.map((p, idx) => (
-                      <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-bold text-slate-800 font-mono shadow-2xs">
-                        <span className="capitalize">{p.metodo_pago}:</span> {formatMoney(p.monto)}
+                    {/* Details Grid */}
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between text-slate-600">
+                        <span className="font-semibold text-slate-400">{rubroConfig.labels.salesRoleHeader}:</span>
+                        <span className="font-bold text-slate-900">{successReceiptData.barberoNombre}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span className="font-semibold text-slate-400">{lang === 'es' ? 'Cliente:' : 'Customer:'}</span>
+                        <span className="font-bold text-slate-900">{successReceiptData.clienteNombre}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span className="font-semibold text-slate-400">{lang === 'es' ? 'Total Ítems:' : 'Total Items:'}</span>
+                        <span className="font-bold font-mono text-slate-900">{successReceiptData.itemsCount}</span>
+                      </div>
+                    </div>
+
+                    {/* Payment breakdown */}
+                    <div className="border-t border-slate-200/80 pt-3 space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        {lang === 'es' ? 'Desglose de Pago' : 'Payment Breakdown'}
                       </span>
-                    ))}
+                      <div className="flex flex-wrap gap-1.5">
+                        {successReceiptData.pagos.map((p, idx) => (
+                          <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-bold text-slate-800 font-mono shadow-2xs">
+                            <span className="capitalize">{p.metodo_pago}:</span> {formatMoney(p.monto)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
                   </div>
+
                 </div>
 
-              </div>
-
-            </div>
-
-            {/* Footer Actions */}
-            <div className="bg-slate-50/90 border-t border-slate-200 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] space-y-2.5 shrink-0">
-              {/* Opcion de imprimir comprobante comentada temporalmente:
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="w-full py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-2xs cursor-pointer"
-              >
-                <Printer className="w-4 h-4 text-slate-500" />
-                <span>{lang === 'es' ? 'Imprimir Comprobante / Ticket' : 'Print Receipt'}</span>
-              </button>
-              */}
-
-              <button
-                type="button"
-                onClick={() => setSuccessReceiptData(null)}
-                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white rounded-xl font-bold text-xs shadow-md shadow-blue-500/10 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>{lang === 'es' ? 'Nueva Venta' : 'New Sale'}</span>
-              </button>
-            </div>
+                {/* Footer Actions (Classic) */}
+                <div className="bg-slate-50/90 border-t border-slate-200 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] space-y-2.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSuccessReceiptData(null)}
+                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white rounded-xl font-bold text-xs shadow-md shadow-blue-500/10 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{lang === 'es' ? 'Nueva Venta' : 'New Sale'}</span>
+                  </button>
+                </div>
+              </>
+            )}
 
           </div>
         </>,

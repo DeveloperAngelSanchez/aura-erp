@@ -75,7 +75,7 @@ export const AttendancePanel: React.FC = () => {
   const { profile } = useAuth();
   const { lang } = useLanguage();
   const { formatMoney } = useSettings();
-  const { impersonating, activeBranchIds } = useEmpresa();
+  const { impersonating, activeBranchIds, rubroConfig } = useEmpresa();
   const t = translations[lang];
 
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
@@ -236,21 +236,23 @@ export const AttendancePanel: React.FC = () => {
       </div>
 
       {/* Today's Commissions Card */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
-            <Scissors className="w-3.5 h-3.5 text-purple-500" />
-            {t.todayCommissions}
+      {rubroConfig.features.comisionesBarbero && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+              <Scissors className="w-3.5 h-3.5 text-purple-500" />
+              {t.todayCommissions}
+            </p>
+            <DollarSign className="w-4 h-4 text-emerald-600" />
+          </div>
+          <p className="text-2xl font-extrabold text-slate-950 font-mono">
+            {formatMoney(commissions)}
           </p>
-          <DollarSign className="w-4 h-4 text-emerald-600" />
+          {commissions === 0 && (
+            <p className="text-[10px] text-slate-400 italic mt-2">{t.noCommissions}</p>
+          )}
         </div>
-        <p className="text-2xl font-extrabold text-slate-950 font-mono">
-          {formatMoney(commissions)}
-        </p>
-        {commissions === 0 && (
-          <p className="text-[10px] text-slate-400 italic mt-2">{t.noCommissions}</p>
-        )}
-      </div>
+      )}
 
       {/* Confirm Clock Out Modal */}
       {showConfirmOut && (

@@ -567,10 +567,12 @@ export const LandingPage: React.FC = () => {
           </div>
 
           <p className="text-xs text-slate-500 text-center md:text-left">
-            &copy; {new Date().getFullYear()} Aura ERP / Sellora. Todos los derechos reservados. Sistema de Gestión y Punto de Venta en la Nube.
+            &copy; {new Date().getFullYear()} Aura ERP. Todos los derechos reservados. Sistema de Gestión y Punto de Venta en la Nube.
           </p>
 
           <div className="flex items-center gap-6 text-xs text-slate-400">
+            <Link to="/terms" className="hover:text-white transition-colors">Términos de Servicio</Link>
+            <Link to="/privacy" className="hover:text-white transition-colors">Política de Privacidad</Link>
             <Link to="/login" className="hover:text-white transition-colors">Ingreso Administrador</Link>
             <a href="#faq" className="hover:text-white transition-colors">Soporte</a>
           </div>

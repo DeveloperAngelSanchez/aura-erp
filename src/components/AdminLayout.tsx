@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { EmpresaBanner } from './EmpresaBanner';
 import { NotificationCenter } from './NotificationCenter';
@@ -17,8 +17,11 @@ const translations = {
 export const AdminLayout: React.FC = () => {
   const { profile, signOut } = useAuth();
   const { lang, toggleLanguage } = useLanguage();
+  const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const t = translations[lang];
+
+  const isFullHeight = location.pathname.includes('/crm');
 
   return (
     <div className="flex bg-slate-50 text-slate-800 min-h-screen">
@@ -27,11 +30,11 @@ export const AdminLayout: React.FC = () => {
       <Sidebar mobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} />
 
       {/* Main content wrapper */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
+      <div className="flex-1 flex flex-col h-screen h-[100dvh] overflow-hidden min-w-0">
         <EmpresaBanner />
 
         {/* Top Header */}
-        <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between gap-3 shadow-sm">
+        <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between gap-3 shadow-sm shrink-0">
           
           {/* Mobile Hamburger Button */}
           <button
@@ -83,13 +86,21 @@ export const AdminLayout: React.FC = () => {
         </header>
 
         {/* Content Area */}
-        <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 lg:px-12 pb-safe safe-area-padding">
-          <div className="max-w-7xl mx-auto space-y-6">
+        {isFullHeight ? (
+          <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <ErrorBoundary>
               <Outlet />
             </ErrorBoundary>
-          </div>
-        </main>
+          </main>
+        ) : (
+          <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 lg:px-12 pb-safe safe-area-padding">
+            <div className="max-w-7xl mx-auto space-y-6">
+              <ErrorBoundary>
+                <Outlet />
+              </ErrorBoundary>
+            </div>
+          </main>
+        )}
       </div>
     </div>
   );

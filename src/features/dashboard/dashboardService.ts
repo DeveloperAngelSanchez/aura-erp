@@ -139,9 +139,9 @@ export async function loadDashboard(branchIds: string[], range: DateRange): Prom
       .eq('estado', 'abierto')
       .in('sucursal_id', branchIds),
 
-    // Total barbers
+    // Total staff
     supabase.from('perfiles').select('id', { count: 'exact', head: true })
-      .eq('rol', 'barbero')
+      .in('rol', ['barbero', 'mesero', 'cajero'])
       .in('sucursal_id', branchIds),
 
     // Low stock count

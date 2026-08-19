@@ -1,10 +1,13 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { supabase } from '../api/supabaseClient';
 import { useAuth } from './AuthContext';
+import type { BusinessRubro, RubroConfig } from '../config/rubrosConfig';
+import { getRubroConfig } from '../config/rubrosConfig';
 
 export interface Empresa {
   id: string;
   nombre: string;
+  rubro: BusinessRubro;
   activa: boolean;
   logo_url?: string | null;
 }
@@ -17,6 +20,8 @@ interface SucursalBasica {
 interface EmpresaContextType {
   activeEmpresaId: string | null;
   activeEmpresaNombre: string | null;
+  activeRubro: BusinessRubro;
+  rubroConfig: RubroConfig;
   activeBranchIds: string[];
   impersonating: boolean;
   empresas: Empresa[];
@@ -32,6 +37,7 @@ export const EmpresaProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const { profile } = useAuth();
   const [activeEmpresaId, setActiveEmpresaId] = useState<string | null>(null);
   const [activeEmpresaNombre, setActiveEmpresaNombre] = useState<string | null>(null);
+  const [activeRubro, setActiveRubro] = useState<BusinessRubro>('barberia');
   const [activeBranchIds, setActiveBranchIds] = useState<string[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [loadingEmpresas, setLoadingEmpresas] = useState(false);
@@ -42,6 +48,7 @@ export const EmpresaProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!empresaId) {
       setActiveEmpresaId(null);
       setActiveEmpresaNombre(null);
+      setActiveRubro('barberia');
       setActiveBranchIds([]);
       return;
     }
@@ -50,23 +57,30 @@ export const EmpresaProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setActiveEmpresaNombre(empresaNombre || null);
 
     try {
-      const { data } = await supabase
-        .from('sucursales')
-        .select('id, nombre')
-        .eq('empresa_id', empresaId);
+      const [sucursalesRes, empresaRes] = await Promise.all([
+        supabase.from('sucursales').select('id, nombre').eq('empresa_id', empresaId),
+        supabase.from('empresas').select('rubro').eq('id', empresaId).single()
+      ]);
 
-      if (data) {
-        setActiveBranchIds(data.map((s: SucursalBasica) => s.id));
+      if (sucursalesRes.data) {
+        setActiveBranchIds(sucursalesRes.data.map((s: SucursalBasica) => s.id));
+      }
+      if (empresaRes.data?.rubro) {
+        setActiveRubro(empresaRes.data.rubro as BusinessRubro);
+      } else {
+        setActiveRubro('barberia');
       }
     } catch (err) {
-      console.error('Error loading sucursales for empresa:', err);
+      console.error('Error loading sucursales/rubro for empresa:', err);
       setActiveBranchIds([]);
+      setActiveRubro('barberia');
     }
   }, []);
 
   const clearActiveEmpresa = useCallback(() => {
     setActiveEmpresaId(null);
     setActiveEmpresaNombre(null);
+    setActiveRubro('barberia');
     setActiveBranchIds([]);
   }, []);
 
@@ -76,7 +90,7 @@ export const EmpresaProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       const { data } = await supabase
         .from('empresas')
-        .select('id, nombre, activa, logo_url')
+        .select('id, nombre, rubro, activa, logo_url')
         .order('nombre', { ascending: true });
 
       if (data) {
@@ -95,12 +109,41 @@ export const EmpresaProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [isSystemAdmin, refreshEmpresas]);
 
+  // Si el usuario normal no es admin de sistema, cargar empresa_id, nombre, sucursales y rubro de su empresa
+  useEffect(() => {
+    if (!isSystemAdmin && profile?.sucursal_id) {
+      supabase
+        .from('sucursales')
+        .select('id, empresa_id, empresas(id, nombre, rubro)')
+        .eq('id', profile.sucursal_id)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            if (data.empresa_id) {
+              setActiveEmpresaId(data.empresa_id);
+              setActiveBranchIds([data.id]);
+            }
+            const emp = data.empresas as any;
+            if (emp?.nombre) {
+              setActiveEmpresaNombre(emp.nombre);
+            }
+            if (emp?.rubro) {
+              setActiveRubro(emp.rubro as BusinessRubro);
+            }
+          }
+        });
+    }
+  }, [isSystemAdmin, profile?.sucursal_id]);
+
   const impersonating = isSystemAdmin && activeEmpresaId !== null;
+  const rubroConfig = getRubroConfig(activeRubro);
 
   return (
     <EmpresaContext.Provider value={{
       activeEmpresaId,
       activeEmpresaNombre,
+      activeRubro,
+      rubroConfig,
       activeBranchIds,
       impersonating,
       empresas,

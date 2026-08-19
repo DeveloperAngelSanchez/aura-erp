@@ -55,6 +55,10 @@ interface Item {
   moneda?: string | null;
   inventariable?: boolean;
   comisionable?: boolean;
+  categoria_id?: string | null;
+  codigo_sunat?: string | null;
+  unidad_medida?: string | null;
+  tipo_afectacion_igv?: string | null;
   creado_en: string;
   vista_stock_kits?: any;
   item_presentaciones?: PresentacionRecord[];
@@ -200,8 +204,32 @@ export const CatalogManager: React.FC = () => {
   const { profile } = useAuth();
   const { lang } = useLanguage();
   const { formatMoney, config } = useSettings();
-  const { impersonating, activeBranchIds } = useEmpresa();
+  const { impersonating, activeBranchIds, rubroConfig } = useEmpresa();
   const t = translations[lang];
+
+  const subtitleText = rubroConfig.id === 'restaurante'
+    ? (lang === 'es' ? 'Administra los platos, bebidas, entradas y menú del restaurante.' : 'Manage restaurant dishes, drinks, appetizers, and menu.')
+    : rubroConfig.id === 'general'
+    ? (lang === 'es' ? 'Administra el catálogo de productos y artículos.' : 'Manage product catalog and items.')
+    : t.subtitle;
+
+  const itemPlaceholderText = rubroConfig.id === 'restaurante'
+    ? (lang === 'es' ? 'Ej. Lomo Saltado, Chicha Morada 1L, Menú Ejecutivo' : 'E.g. Steak, Lemonade, Executive Menu')
+    : rubroConfig.id === 'general'
+    ? (lang === 'es' ? 'Ej. Producto A, Artículo B, Pack C' : 'E.g. Item A, Product B, Pack C')
+    : (lang === 'es' ? 'Ej. Corte Degradado, Champú Barber, Combo Afeitado' : 'E.g. Fade Cut, Barber Shampoo, Shave Combo');
+
+  const filterProductLabel = rubroConfig.id === 'restaurante'
+    ? (lang === 'es' ? 'Platos / Bebidas' : 'Dishes / Drinks')
+    : t.filterProduct;
+
+  const filterServiceLabel = rubroConfig.id === 'restaurante'
+    ? (lang === 'es' ? 'Preparación / Servicio' : 'Service / Prep')
+    : t.filterService;
+
+  const filterKitLabel = rubroConfig.id === 'restaurante'
+    ? (lang === 'es' ? 'Menú / Combos' : 'Menu / Combos')
+    : t.filterKit;
   const { columnWidths, handleMouseDown } = useResizableColumns<CatalogCol>(initialCatalogColWidths, 'col_widths_catalog');
 
   // List states
@@ -224,6 +252,10 @@ export const CatalogManager: React.FC = () => {
   const [tipo, setTipo] = useState<'producto' | 'servicio' | 'kit'>('producto');
   const [precioVenta, setPrecioVenta] = useState('');
   
+  // Categoría & Sectorización de Comandas
+  const [categoriaId, setCategoriaId] = useState<string>('');
+  const [categorias, setCategorias] = useState<any[]>([]);
+
   // Productos avanzados & Toggles
   const [inventariable, setInventariable] = useState(true);
   const [comisionable, setComisionable] = useState(true);
@@ -238,10 +270,26 @@ export const CatalogManager: React.FC = () => {
   const [kitComponents, setKitComponents] = useState<ComponentInput[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const loadCategorias = async () => {
+    try {
+      const activeRubro = rubroConfig.id;
+      const { data } = await supabase
+        .from('categorias')
+        .select('id, nombre, estacion_impresion, rubro')
+        .eq('activa', true)
+        .in('rubro', [activeRubro, 'general'])
+        .order('nombre');
+      setCategorias(data || []);
+    } catch (e) {
+      console.error('Error loading categorias:', e);
+    }
+  };
+
   const loadCatalog = async () => {
     try {
       setLoading(true);
       setError(null);
+      loadCategorias();
 
       // 1. Fetch items
       const { data: itemsData, error: itemsError } = await supabase
@@ -324,6 +372,7 @@ export const CatalogManager: React.FC = () => {
     setEditingItemId(item.id);
     setNombre(item.nombre);
     setTipo(item.tipo);
+    setCategoriaId(item.categoria_id || '');
     setInventariable(item.inventariable ?? (item.tipo !== 'servicio'));
     setComisionable(item.comisionable !== false);
     setPrecioVenta(item.precio_venta.toString());
@@ -384,8 +433,8 @@ export const CatalogManager: React.FC = () => {
       const isInventariable = tipo === 'servicio' ? false : inventariable;
       const stock = (tipo === 'producto' && isInventariable) ? parseInt(stockActual) : 0;
       const minStock = (tipo === 'producto' && isInventariable) ? parseInt(stockMinimo) : 0;
-      const cost = (tipo === 'producto' && isInventariable) ? parseFloat(precioCosto) : 0;
-      const url = (tipo === 'producto' && isInventariable) && fotoUrl.trim() !== '' ? fotoUrl.trim() : null;
+      const cost = precioCosto && !isNaN(parseFloat(precioCosto)) ? parseFloat(precioCosto) : 0;
+      const url = fotoUrl && fotoUrl.trim() !== '' ? fotoUrl.trim() : null;
 
       if (isNaN(price) || price < 0) {
         setFormError(lang === 'es' ? 'El precio debe ser un número válido >= 0' : 'Price must be a valid number >= 0');
@@ -406,7 +455,11 @@ export const CatalogManager: React.FC = () => {
             foto_url: url,
             moneda: itemMoneda,
             inventariable: hasPresentaciones ? false : isInventariable,
-            comisionable: comisionable
+            comisionable: comisionable,
+            categoria_id: categoriaId || null,
+            unidad_medida: tipo === 'servicio' ? 'ZZ' : 'NIU',
+            codigo_sunat: '50192701',
+            tipo_afectacion_igv: '10'
           })
           .eq('id', editingItemId);
 
@@ -459,7 +512,11 @@ export const CatalogManager: React.FC = () => {
             foto_url: url,
             moneda: itemMoneda,
             inventariable: hasPresentaciones ? false : isInventariable,
-            comisionable: comisionable
+            comisionable: comisionable,
+            categoria_id: categoriaId || null,
+            unidad_medida: tipo === 'servicio' ? 'ZZ' : 'NIU',
+            codigo_sunat: '50192701',
+            tipo_afectacion_igv: '10'
           })
           .select()
           .single();
@@ -526,6 +583,7 @@ export const CatalogManager: React.FC = () => {
     setEditingItemId(null);
     setNombre('');
     setTipo('producto');
+    setCategoriaId('');
     setInventariable(true);
     setComisionable(true);
     setPrecioVenta('');
@@ -564,7 +622,7 @@ export const CatalogManager: React.FC = () => {
             <span>{t.title}</span>
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-1">
-            {t.subtitle}
+            {subtitleText}
           </p>
         </div>
 
@@ -616,9 +674,9 @@ export const CatalogManager: React.FC = () => {
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
             {[
               { id: 'all', label: t.filterAll },
-              { id: 'producto', label: t.filterProduct },
-              { id: 'servicio', label: t.filterService },
-              { id: 'kit', label: t.filterKit },
+              { id: 'producto', label: filterProductLabel },
+              { id: 'servicio', label: filterServiceLabel },
+              { id: 'kit', label: filterKitLabel },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -709,7 +767,7 @@ export const CatalogManager: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span>{item.nombre}</span>
                         {item.comisionable !== false ? (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200/80" title="Genera comisión al barbero">
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200/80" title={`Genera comisión al ${rubroConfig.labels.staffMember.toLowerCase()}`}>
                             % Comisión
                           </span>
                         ) : (
@@ -764,7 +822,7 @@ export const CatalogManager: React.FC = () => {
                       {item.tipo === 'producto' && item.inventariable !== false ? (item.stock_minimo ?? 0) : '—'}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono text-slate-700 whitespace-nowrap">
-                      {item.tipo === 'producto' && item.inventariable !== false ? formatMoney(item.precio_costo ?? 0, item.moneda || undefined) : '—'}
+                      {formatMoney(item.precio_costo ?? 0, item.moneda || undefined)}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 whitespace-nowrap">
                       {formatMoney(item.precio_venta, item.moneda || undefined)}
@@ -881,7 +939,7 @@ export const CatalogManager: React.FC = () => {
                     <input
                       type="text"
                       required
-                      placeholder="Ej. Corte Degradado, Champú Barber, Combo Afeitado"
+                      placeholder={itemPlaceholderText}
                       value={nombre}
                       onChange={(e) => setNombre(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all text-xs font-medium shadow-2xs placeholder:text-slate-400"
@@ -905,24 +963,42 @@ export const CatalogManager: React.FC = () => {
                         }}
                         className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 focus:outline-none focus:border-blue-500 transition-all text-xs shadow-2xs cursor-pointer font-semibold"
                       >
-                        <option value="producto">{t.filterProduct}</option>
-                        <option value="servicio">{t.filterService}</option>
-                        <option value="kit">{t.filterKit}</option>
+                        <option value="producto">{filterProductLabel}</option>
+                        <option value="servicio">{filterServiceLabel}</option>
+                        <option value="kit">{filterKitLabel}</option>
                       </select>
                     </div>
 
                     <div className="space-y-1">
                       <label className="text-[11px] font-bold text-slate-600 block">
-                        {t.modalFoto}
+                        {lang === 'es' ? 'Categoría / Estación' : 'Category / Station'}
                       </label>
-                      <input
-                        type="text"
-                        placeholder="https://..."
-                        value={fotoUrl}
-                        onChange={(e) => setFotoUrl(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-800 focus:outline-none focus:border-blue-500 transition-all text-xs shadow-2xs placeholder:text-slate-400"
-                      />
+                      <select
+                        value={categoriaId}
+                        onChange={(e) => setCategoriaId(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 focus:outline-none focus:border-blue-500 transition-all text-xs shadow-2xs cursor-pointer font-semibold"
+                      >
+                        <option value="">{lang === 'es' ? 'Sin Categoría (General)' : 'Uncategorized (General)'}</option>
+                        {categorias.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.nombre} ({c.estacion_impresion.toUpperCase()})
+                          </option>
+                        ))}
+                      </select>
                     </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-600 block">
+                      {t.modalFoto}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="https://..."
+                      value={fotoUrl}
+                      onChange={(e) => setFotoUrl(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-800 focus:outline-none focus:border-blue-500 transition-all text-xs shadow-2xs placeholder:text-slate-400"
+                    />
                   </div>
                 </div>
 
@@ -1032,12 +1108,12 @@ export const CatalogManager: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <Percent className="w-4 h-4 text-blue-600 shrink-0" />
                           <span className="text-xs font-bold text-slate-800">
-                            {lang === 'es' ? 'Comisionar a Personal / Barbero' : 'Commissionable Item'}
+                            {lang === 'es' ? `Comisionar a ${rubroConfig.labels.staffMember}` : 'Commissionable Item'}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 leading-tight">
                           {comisionable
-                            ? (lang === 'es' ? 'Al vender este item, se aplicará el % de comisión al barbero asignado.' : 'Sales of this item will generate commission for the assigned staff member.')
+                            ? (lang === 'es' ? `Al vender este item, se aplicará el % de comisión al ${rubroConfig.labels.staffMember.toLowerCase()} asignado.` : 'Sales of this item will generate commission for the assigned staff member.')
                             : (lang === 'es' ? 'Item excluido de comisiones (No acumula comisión en ventas).' : 'Excluded from staff commissions (Generates $0 commission).')
                           }
                         </p>

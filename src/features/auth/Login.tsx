@@ -17,7 +17,8 @@ const translations = {
     orLoginWith: 'O iniciar sesión con',
     noAccount: '¿No tienes una cuenta?',
     registerNow: 'Regístrate ahora',
-    copyright: 'Copyright © 2025 Aura Enterprises LTD.',
+    copyright: 'Copyright © 2026 Aura Enterprises.',
+    termsOfService: 'Términos de Servicio',
     privacyPolicy: 'Política de Privacidad',
     slogan: 'Administra tu equipo y operaciones sin esfuerzo.',
     sloganSub: 'Inicia sesión para acceder a tu panel de CRM y gestionar tu equipo.',
@@ -45,7 +46,8 @@ const translations = {
     orLoginWith: 'Or Login With',
     noAccount: "Don't Have An Account?",
     registerNow: 'Register Now.',
-    copyright: 'Copyright © 2025 Aura Enterprises LTD.',
+    copyright: 'Copyright © 2026 Aura Enterprises.',
+    termsOfService: 'Terms of Service',
     privacyPolicy: 'Privacy Policy',
     slogan: 'Effortlessly manage your team and operations.',
     sloganSub: 'Log in to access your CRM dashboard and manage your team.',
@@ -266,7 +268,8 @@ export const Login: React.FC = () => {
         <div className="flex flex-col sm:flex-row justify-between items-center text-xs text-slate-400 pt-6 border-t border-slate-100 gap-2">
           <span>{t.copyright}</span>
           <div className="flex gap-4">
-            <a href="#privacy" className="hover:underline">{t.privacyPolicy}</a>
+            <Link to="/terms" className="hover:underline hover:text-blue-600 transition-colors">{t.termsOfService}</Link>
+            <Link to="/privacy" className="hover:underline hover:text-blue-600 transition-colors">{t.privacyPolicy}</Link>
           </div>
         </div>
       </div>

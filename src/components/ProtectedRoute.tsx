@@ -1,10 +1,11 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import type { UserRole } from '../config/rubrosConfig';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  allowedRoles?: Array<'admin' | 'cajero' | 'barbero'>;
+  allowedRoles?: Array<UserRole>;
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
@@ -33,8 +34,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
   const isSistemaAdmin = profile?.rol_sistema === 'sistema_admin';
 
   if (allowedRoles && profile && !allowedRoles.includes(profile.rol) && !isSistemaAdmin) {
-    if (profile.rol === 'admin') return <Navigate to="/admin" replace />;
-    if (profile.rol === 'cajero') return <Navigate to="/pos" replace />;
+    if (profile.rol === 'admin' || profile.rol === 'jefe') return <Navigate to="/admin" replace />;
+    if (profile.rol === 'cajero' || profile.rol === 'mesero' || profile.rol === 'asistente') return <Navigate to="/pos" replace />;
     if (profile.rol === 'barbero') return <Navigate to="/barber" replace />;
   }
 

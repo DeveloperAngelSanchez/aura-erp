@@ -22,7 +22,7 @@ Este documento registra el progreso actual del desarrollo en relación con el bl
 1. **MVC Serverless Puro:**
    * **Modelo:** Reside en Supabase con restricciones relacionales estrictas y triggers nativos (ej. incremento de stock en compras).
    * **Controlador:** Operaciones complejas unificadas en transacciones a nivel de servidor (RPC `procesar_venta_pos`), y orquestación reactiva mediante custom hooks (`useAuth`, `useLanguage`, `useCash`).
-   * **Vista:** Interfaz de usuario Zenxius Light Theme con un 100% de consistencia de colores Sellora (Slate, Cobalt Blue) y uso de iconos SVG vectoriales (`lucide-react`) sin emojis.
+   * **Vista:** Interfaz de usuario Zenxius Light Theme con un 100% de consistencia de colores Aura (Slate, Cobalt Blue) y uso de iconos SVG vectoriales (`lucide-react`) sin emojis.
 2. **Aislamiento Multi-Sucursal (RLS):**
    * Todas las tablas de negocio tienen habilitado Row Level Security y filtran dinámicamente según la sucursal del cajero conectado (`sucursal_id`), previniendo filtraciones de datos entre locales comerciales.
 3. **Internacionalización y Persistencia:**

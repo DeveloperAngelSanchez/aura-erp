@@ -1,5 +1,6 @@
 import React from 'react';
 import { useSettings } from '../../context/SettingsContext';
+import { useEmpresa } from '../../context/EmpresaContext';
 import {
   ShoppingCart,
   Trash2,
@@ -10,6 +11,7 @@ import {
   Package,
   Scissors,
   Gift,
+  User,
 } from 'lucide-react';
 
 interface Item {
@@ -31,7 +33,9 @@ export interface CartItem {
   precioUnitario?: number;
 }
 
-const getCartKey = (item: CartItem) => item.item.id + (item.presentacionNombre ? '::' + item.presentacionNombre : '');
+const getCartKey = (cartItem: CartItem) => {
+  return `${cartItem.item.id}::${cartItem.presentacionNombre || ''}`;
+};
 
 interface CartPanelProps {
   cart: CartItem[];
@@ -42,16 +46,16 @@ interface CartPanelProps {
   updateCartQty: (cartKey: string, delta: number) => void;
   removeFromCart: (cartKey: string) => void;
   handleCheckout: () => void;
-  barberos: any[];
+  barberos: { id: string; nombre: string }[];
   selectedBarberoId: string;
   setSelectedBarberoId: (id: string) => void;
 }
 
 const getItemIcon = (tipo: 'producto' | 'servicio' | 'kit') => {
   switch (tipo) {
-    case 'producto': return <Package className="w-5 h-5 text-emerald-600" />;
-    case 'servicio': return <Scissors className="w-5 h-5 text-purple-600" />;
-    case 'kit': return <Gift className="w-5 h-5 text-blue-600" />;
+    case 'producto': return <Package className="w-4 h-4 text-emerald-600" />;
+    case 'servicio': return <Scissors className="w-4 h-4 text-purple-600" />;
+    case 'kit': return <Gift className="w-4 h-4 text-blue-600" />;
   }
 };
 
@@ -61,26 +65,27 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   barberos, selectedBarberoId, setSelectedBarberoId,
 }) => {
   const { formatMoney } = useSettings();
+  const { rubroConfig } = useEmpresa();
 
   return (
     <div className="w-full lg:w-96 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col justify-between h-full min-h-0 shadow-lg z-10 overflow-hidden">
       <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-0">
 
-        {/* Selector de Barbero - Alineado estéticamente */}
+        {/* Selector de Personal - Alineado estéticamente */}
         <div className="relative w-full mb-4">
           <select
             value={selectedBarberoId}
             onChange={(e) => setSelectedBarberoId(e.target.value)}
             className="w-full pl-9 pr-8 py-2 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 text-xs font-bold text-slate-700 shadow-sm appearance-none cursor-pointer"
           >
-            <option value="">{t.selectBarbero || 'Seleccionar Barbero...'}</option>
+            <option value="">{rubroConfig.labels.selectStaffPrompt}</option>
             {barberos.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.nombre}
               </option>
             ))}
           </select>
-          <Scissors className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+          <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
           <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-[10px] font-bold">
             ▼
           </div>

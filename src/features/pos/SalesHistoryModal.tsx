@@ -5,7 +5,8 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useCash } from '../../context/CashContext';
 import { usePermission } from '../../context/PermissionsContext';
-import { AlertCircle, History, X, Loader2, XCircle, CheckCircle2, Scissors, Calendar, ChevronDown } from 'lucide-react';
+import { useEmpresa } from '../../context/EmpresaContext';
+import { AlertCircle, History, X, Loader2, XCircle, CheckCircle2, Calendar, ChevronDown, User } from 'lucide-react';
 import { AnulationModal } from '../sales/AnulationModal';
 
 interface Venta {
@@ -45,6 +46,7 @@ export const SalesHistoryModal: React.FC<Props> = ({ onClose, historicalTurnId }
   const { lang } = useLanguage();
   const { formatMoney } = useSettings();
   const { activeTurn } = useCash();
+  const { rubroConfig } = useEmpresa();
   const canAnular = usePermission('anular_venta');
 
   const [ventas, setVentas] = useState<Venta[]>([]);
@@ -175,8 +177,8 @@ export const SalesHistoryModal: React.FC<Props> = ({ onClose, historicalTurnId }
                     {/* Left: Barber & Payment */}
                     <div className="space-y-1">
                       <div className="flex items-center gap-1.5">
-                        <Scissors className="w-3.5 h-3.5 text-purple-600" />
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{lang === 'es' ? 'Barbero:' : 'Barber:'}</span>
+                        <User className="w-3.5 h-3.5 text-purple-600" />
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{rubroConfig.labels.salesRoleHeader}:</span>
                         <span className="text-sm font-extrabold text-slate-900">{barberName}</span>
                       </div>
                       <div className="text-xs text-slate-500 font-medium capitalize">

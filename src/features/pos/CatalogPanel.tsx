@@ -1,6 +1,7 @@
 import React from 'react';
-import { Search, Package, Scissors, Gift } from 'lucide-react';
+import { Search, Package, Scissors, Gift, UtensilsCrossed, Layers } from 'lucide-react';
 import { useSettings } from '../../context/SettingsContext';
+import { useEmpresa } from '../../context/EmpresaContext';
 
 interface Item {
   id: string;
@@ -27,10 +28,13 @@ interface CatalogPanelProps {
   getStockLabel: (item: Item) => string;
 }
 
-const getItemIcon = (tipo: 'producto' | 'servicio' | 'kit') => {
+const getItemIcon = (tipo: 'producto' | 'servicio' | 'kit', rubroId: string) => {
   switch (tipo) {
     case 'producto': return <Package className="w-5 h-5 text-emerald-600" />;
-    case 'servicio': return <Scissors className="w-5 h-5 text-purple-600" />;
+    case 'servicio': 
+      if (rubroId === 'restaurante') return <UtensilsCrossed className="w-5 h-5 text-amber-600" />;
+      if (rubroId === 'barberia') return <Scissors className="w-5 h-5 text-purple-600" />;
+      return <Layers className="w-5 h-5 text-blue-600" />;
     case 'kit': return <Gift className="w-5 h-5 text-blue-600" />;
   }
 };
@@ -41,6 +45,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
   addToCart, filteredCatalog, getStockLabel,
 }) => {
   const { formatMoney } = useSettings();
+  const { rubroConfig } = useEmpresa();
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 overflow-y-auto space-y-4">
@@ -53,7 +58,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
               }`}>
               {cat === 'all' ? t.categoriesAll :
                cat === 'producto' ? t.categoriesProducts :
-               cat === 'servicio' ? t.categoriesServices : t.categoriesKits}
+               cat === 'servicio' ? (rubroConfig.id === 'restaurante' ? 'Platos y Preparaciones' : t.categoriesServices) : t.categoriesKits}
             </button>
           ))}
         </div>
@@ -87,7 +92,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
                     className={`bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between space-y-4 hover:shadow-md transition-all duration-200 ${isOutOfStock ? 'opacity-65' : ''}`}>
                     <div className="space-y-2">
                       <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-150 flex items-center justify-center shadow-sm">
-                        {getItemIcon(item.tipo)}
+                        {getItemIcon(item.tipo, rubroConfig.id)}
                       </div>
                       <div className="space-y-0.5">
                         <h3 className="font-bold text-slate-900 text-xs tracking-tight line-clamp-2 min-h-[32px]">{item.nombre} — {p.nombre}</h3>
@@ -124,7 +129,7 @@ export const CatalogPanel: React.FC<CatalogPanelProps> = ({
                 className={`bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between space-y-4 hover:shadow-md transition-all duration-200 ${isOutOfStock ? 'opacity-65' : ''}`}>
                 <div className="space-y-2">
                   <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-150 flex items-center justify-center shadow-sm">
-                    {getItemIcon(item.tipo)}
+                    {getItemIcon(item.tipo, rubroConfig.id)}
                   </div>
                   <div className="space-y-0.5">
                     <h3 className="font-bold text-slate-900 text-xs tracking-tight line-clamp-2 min-h-[32px]">{item.nombre}</h3>

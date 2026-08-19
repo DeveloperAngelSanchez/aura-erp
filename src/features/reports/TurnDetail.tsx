@@ -4,6 +4,7 @@ import { supabase } from '../../api/supabaseClient';
 import { useLanguage } from '../../context/LanguageContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useAuth } from '../../context/AuthContext';
+import { useEmpresa } from '../../context/EmpresaContext';
 import { ReassignSalesModal } from './ReassignSalesModal';
 import { POSTerminal } from '../pos/POSTerminal';
 import {
@@ -153,6 +154,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turnId, onBack }) => {
   const { profile } = useAuth();
   const { lang } = useLanguage();
   const { formatMoney } = useSettings();
+  const { rubroConfig } = useEmpresa();
   const t = translations[lang];
 
   const isAdmin = profile?.rol === 'admin' || profile?.rol_sistema === 'sistema_admin';
@@ -433,7 +435,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turnId, onBack }) => {
                   <th className="py-3 px-3 whitespace-nowrap">{t.ticketId}</th>
                   <th className="py-3 px-3 whitespace-nowrap">{t.date}</th>
                   <th className="py-3 px-3 whitespace-nowrap">{t.customer}</th>
-                  <th className="py-3 px-3 whitespace-nowrap">{t.barbero}</th>
+                  <th className="py-3 px-3 whitespace-nowrap">{rubroConfig.labels.salesRoleHeader}</th>
                   <th className="py-3 px-3 whitespace-nowrap">{t.method}</th>
                   <th className="py-3 px-3 text-right whitespace-nowrap">{t.total}</th>
                   {isAdmin && <th className="py-3 px-3 text-center whitespace-nowrap">Acciones</th>}

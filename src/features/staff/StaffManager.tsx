@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useEmpresa } from '../../context/EmpresaContext';
 import { useSettings } from '../../context/SettingsContext';
+import type { UserRole } from '../../config/rubrosConfig';
 import {
   Users,
   UserPlus,
@@ -29,7 +30,7 @@ interface StaffProfile {
   id: string;
   nombre: string;
   email: string;
-  rol: 'admin' | 'cajero' | 'barbero';
+  rol: UserRole;
   sucursal_id: string;
   comision_porcentaje: number | null;
   activo: boolean;
@@ -81,7 +82,7 @@ const translations: Record<string, Record<string, string>> = {
     clockIn: 'Entrada', clockOut: 'Salida', notClockedIn: 'Sin marcar', onDuty: 'En servicio',
     shiftEnded: 'Jornada terminada', noAttendance: 'Sin registros hoy',
     totalCommissions: 'Comisiones Totales', saving: 'Guardando...', showInactive: 'Ver inactivos',
-    filterBarber: 'Buscar barbero...',
+    filterBarber: 'Buscar personal...',
   },
   en: {
     personal: 'Staff', asistencia: 'Attendance', comisiones: 'Commissions',
@@ -100,7 +101,7 @@ const translations: Record<string, Record<string, string>> = {
     clockIn: 'Clock In', clockOut: 'Clock Out', notClockedIn: 'Not clocked in', onDuty: 'On duty',
     shiftEnded: 'Shift ended', noAttendance: 'No records today',
     totalCommissions: 'Total Commissions', saving: 'Saving...', showInactive: 'Show inactive',
-    filterBarber: 'Search barber...',
+    filterBarber: 'Search staff...',
   },
 };
 
@@ -113,12 +114,15 @@ const roleBadge: Record<string, string> = {
   admin: 'bg-blue-50 text-blue-700 border-blue-200',
   cajero: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   barbero: 'bg-purple-50 text-purple-700 border-purple-200',
+  mesero: 'bg-amber-50 text-amber-700 border-amber-200',
+  jefe: 'bg-rose-50 text-rose-700 border-rose-200',
+  asistente: 'bg-slate-100 text-slate-700 border-slate-200',
 };
 
 export const StaffManager: React.FC = () => {
   const { profile: myProfile } = useAuth();
   const { lang } = useLanguage();
-  const { impersonating, activeBranchIds } = useEmpresa();
+  const { impersonating, activeBranchIds, rubroConfig } = useEmpresa();
   const { formatMoney } = useSettings();
   const t = (key: string) => translations[lang][key] || key;
 
@@ -213,9 +217,10 @@ export const StaffManager: React.FC = () => {
       const fmt = (d: Date) => d.toISOString().split('T')[0];
       const branchIds = impersonating ? activeBranchIds : [myProfile?.sucursal_id];
 
+      const allowedRoles = rubroConfig.rolesDisponibles.map(r => r.id);
       const { data: barberProfiles } = await supabase
         .from('perfiles').select('id, nombre, comision_porcentaje')
-        .eq('rol', 'barbero').eq('activo', true).in('sucursal_id', branchIds);
+        .in('rol', allowedRoles).eq('activo', true).in('sucursal_id', branchIds);
 
       const { data: commissions } = await supabase
         .from('vista_comisiones_barberos').select('barbero_id, comision, venta_fecha')
@@ -404,8 +409,8 @@ export const StaffManager: React.FC = () => {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-white p-1 border border-slate-200 rounded-xl shadow-sm w-fit">
-        {(['personal', 'asistencia', 'comisiones'] as Tab[]).map((k) => (
-          <button key={k} onClick={() => setTab(k)}
+        {(rubroConfig.features.comisionesBarbero ? ['personal', 'asistencia', 'comisiones'] : ['personal', 'asistencia']).map((k) => (
+          <button key={k} onClick={() => setTab(k as Tab)}
             className={`px-5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               tab === k ? 'bg-blue-50 text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
             }`}>
@@ -454,9 +459,9 @@ export const StaffManager: React.FC = () => {
               <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}
                 className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-medium text-slate-600 shadow-sm focus:outline-none focus:border-blue-500">
                 <option value="all">{t('filterRole')}</option>
-                <option value="admin">Admin</option>
-                <option value="cajero">Cajero</option>
-                <option value="barbero">Barbero</option>
+                {rubroConfig.rolesDisponibles.map((r) => (
+                  <option key={r.id} value={r.id}>{r.label}</option>
+                ))}
               </select>
               <label className="flex items-center gap-1.5 cursor-pointer select-none">
                 <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)}
@@ -754,11 +759,11 @@ export const StaffManager: React.FC = () => {
               )}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('role')}</label>
-                <select value={fRol} onChange={(e) => setFRol(e.target.value)}
+                <select value={fRol} onChange={(e) => setFRol(e.target.value as any)}
                   className="w-full px-4 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-blue-500 transition-all text-xs shadow-sm">
-                  <option value="cajero">Cajero</option>
-                  <option value="barbero">Barbero</option>
-                  <option value="admin">Admin</option>
+                  {rubroConfig.rolesDisponibles.map((r) => (
+                    <option key={r.id} value={r.id}>{r.label}</option>
+                  ))}
                 </select>
               </div>
               <div className="space-y-1">

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useEmpresa } from '../context/EmpresaContext';
 import {
   LayoutDashboard, 
   Package, 
@@ -18,6 +19,7 @@ import {
   X,
   Clock,
   ChevronDown,
+  MessageSquare,
 } from 'lucide-react';
 
 const translations = {
@@ -33,6 +35,7 @@ const translations = {
     logout: 'Cerrar Sesión',
     role: 'Rol',
     contacts: 'Clientes y Proveedores',
+    crmTiktok: 'CRM TikTok',
   },
   en: {
     dashboard: 'Dashboard',
@@ -46,6 +49,7 @@ const translations = {
     logout: 'Log Out',
     role: 'Role',
     contacts: 'Customers & Suppliers',
+    crmTiktok: 'TikTok CRM',
   }
 };
 
@@ -78,6 +82,7 @@ const isGroup = (item: MenuItem): item is MenuGroup => {
 export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMobile }) => {
   const { profile } = useAuth();
   const { lang } = useLanguage();
+  const { rubroConfig } = useEmpresa();
   const t = translations[lang];
 
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -116,7 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMob
     { name: t.purchases, path: '/admin/purchases', icon: Truck, roles: ['admin'] },
     { name: t.inventory, path: '/admin/inventory', icon: Boxes, roles: ['admin'] },
     { name: t.pos, path: '/pos', icon: ShoppingCart, roles: ['admin', 'cajero'] },
-    { name: lang === 'es' ? 'Personal' : 'Staff', path: '/admin/staff', icon: Users, roles: ['admin'] },
+    { name: rubroConfig.labels.staffTitle, path: '/admin/staff', icon: Users, roles: ['admin'] },
     {
       name: t.reports,
       icon: BarChart3,
@@ -127,6 +132,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMob
       ],
     },
     { name: t.contacts, path: '/admin/customers', icon: UserCheck, roles: ['admin'] },
+    { name: t.crmTiktok, path: '/crm/tiktok', icon: MessageSquare, roles: ['admin', 'cajero'] },
     { name: t.settings, path: '/admin/settings', icon: Settings, roles: ['admin'] },
     { name: lang === 'es' ? 'Aprobaciones Caja' : 'Cash Approvals', path: '/admin/cash-approvals', icon: DollarSign, roles: ['admin'] },
   ];

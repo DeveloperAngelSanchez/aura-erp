@@ -18,8 +18,11 @@ import { CashApprovals } from '../features/cash/CashApprovals.tsx';
 import { CustomerManager } from '../features/customers/CustomerManager.tsx';
 import { StaffManager } from '../features/staff/StaffManager.tsx';
 import { CloseTurnPage } from '../features/cash/CloseTurnPage.tsx';
+import { TikTokCRMPage } from '../features/crm/TikTokCRMPage.tsx';
 
 import { LandingPage } from '../features/landing/LandingPage.tsx';
+import { TermsOfService } from '../features/legal/TermsOfService.tsx';
+import { PrivacyPolicy } from '../features/legal/PrivacyPolicy.tsx';
 
 export const AppRoutes: React.FC = () => {
   const { user, profile } = useAuth();
@@ -27,8 +30,8 @@ export const AppRoutes: React.FC = () => {
   const getRedirectPath = () => {
     if (!profile) return '/login';
     if (profile.rol_sistema === 'sistema_admin') return '/admin';
-    if (profile.rol === 'admin') return '/admin';
-    if (profile.rol === 'cajero') return '/pos';
+    if (profile.rol === 'admin' || profile.rol === 'jefe') return '/admin';
+    if (profile.rol === 'cajero' || profile.rol === 'mesero' || profile.rol === 'asistente') return '/pos';
     if (profile.rol === 'barbero') return '/barber';
     return '/login';
   };
@@ -38,6 +41,30 @@ export const AppRoutes: React.FC = () => {
       <Route 
         path="/" 
         element={<LandingPage />} 
+      />
+      <Route 
+        path="/terms" 
+        element={<TermsOfService />} 
+      />
+      <Route 
+        path="/terminos" 
+        element={<Navigate to="/terms" replace />} 
+      />
+      <Route 
+        path="/terms-of-service" 
+        element={<Navigate to="/terms" replace />} 
+      />
+      <Route 
+        path="/privacy" 
+        element={<PrivacyPolicy />} 
+      />
+      <Route 
+        path="/privacidad" 
+        element={<Navigate to="/privacy" replace />} 
+      />
+      <Route 
+        path="/privacy-policy" 
+        element={<Navigate to="/privacy" replace />} 
       />
       <Route 
         path="/login" 
@@ -69,6 +96,18 @@ export const AppRoutes: React.FC = () => {
         <Route path="cash-approvals" element={<CashApprovals />} />
         <Route path="staff" element={<StaffManager />} />
         <Route path="customers" element={<CustomerManager />} />
+        <Route path="crm/tiktok" element={<TikTokCRMPage />} />
+      </Route>
+
+      <Route 
+        path="/crm/tiktok" 
+        element={
+          <ProtectedRoute allowedRoles={['admin', 'cajero']}>
+            <AdminLayout />
+          </ProtectedRoute>
+        } 
+      >
+        <Route index element={<TikTokCRMPage />} />
       </Route>
 
       <Route 
