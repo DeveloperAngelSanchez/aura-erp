@@ -147,7 +147,10 @@ export const ChatList: React.FC<ChatListProps> = ({
             <MessageSquare className="w-8 h-8 mx-auto text-slate-300" />
             <p className="text-xs font-medium text-slate-600">No hay conversaciones</p>
             <p className="text-xs text-slate-400">
-              Prueba la función &quot;Simular Chat&quot; para enviar un mensaje de prueba al Sandbox.
+              {isConectado 
+                ? "Envía un mensaje directo desde tu cuenta personal de prueba en TikTok a tu cuenta de empresa para iniciar el chat."
+                : "Prueba la función \"Simular Chat\" para enviar un mensaje de prueba al Sandbox."
+              }
             </p>
           </div>
         ) : (

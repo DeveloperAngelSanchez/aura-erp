@@ -184,7 +184,7 @@ export const TikTokConfigModal: React.FC<TikTokConfigModalProps> = ({
                         <div className="flex items-center gap-2">
                           <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                           <div className="text-[11px] text-emerald-800 font-semibold leading-tight">
-                            🎵 Cuenta de TikTok Vinculada
+                            Cuenta de TikTok Vinculada
                           </div>
                         </div>
                         <button

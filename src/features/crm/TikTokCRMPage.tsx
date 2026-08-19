@@ -222,9 +222,15 @@ export const TikTokCRMPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="font-bold text-sm text-slate-900 leading-tight">CRM TikTok Direct</h1>
-              <span className="text-[10px] font-semibold bg-gradient-to-r from-teal-500 to-emerald-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                <Sparkles className="w-2.5 h-2.5" /> Sandbox Activo
-              </span>
+              {isConectado ? (
+                <span className="text-[10px] font-semibold bg-emerald-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                  <CheckCircle2 className="w-2.5 h-2.5" /> En Línea
+                </span>
+              ) : (
+                <span className="text-[10px] font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                  <Sparkles className="w-2.5 h-2.5" /> Sandbox Activo
+                </span>
+              )}
             </div>
             <p className="text-[11px] text-slate-400">
               Canal de mensajería empresarial TikTok para atención al cliente y captura de leads.
