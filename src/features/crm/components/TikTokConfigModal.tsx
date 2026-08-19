@@ -182,7 +182,7 @@ export const TikTokConfigModal: React.FC<TikTokConfigModalProps> = ({
                     type="button"
                     onClick={() => {
                       const redirectUri = window.location.origin + '/crm/tiktok';
-                      const authUrl = `https://www.tiktok.com/v2/auth/authorize/?client_key=${config.tiktok_app_id}&scope=im.direct_messages,im.users,user.info.profile&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${empresaId}`;
+                      const authUrl = `https://www.tiktok.com/v2/auth/authorize/?client_key=${config.tiktok_app_id}&scope=user.info.basic,user.info.profile&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${empresaId}`;
                       window.location.href = authUrl;
                     }}
                     className="w-full py-2.5 px-4 bg-slate-900 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-md cursor-pointer border border-slate-700"
