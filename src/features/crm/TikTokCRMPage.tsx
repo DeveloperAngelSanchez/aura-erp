@@ -96,7 +96,8 @@ export const TikTokCRMPage: React.FC = () => {
         setOauthMessage('Intercambiando código de autorización con TikTok...');
 
         const { tiktokService } = await import('./services/tiktokService');
-        await tiktokService.intercambiarCodigoOauth(empresaId!, authCode);
+        const redirectUri = window.location.origin + '/crm/tiktok';
+        await tiktokService.intercambiarCodigoOauth(empresaId!, authCode, redirectUri);
 
         setOauthStatus('success');
         setOauthMessage('¡Cuenta de TikTok conectada exitosamente!');

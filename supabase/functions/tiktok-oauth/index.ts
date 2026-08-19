@@ -25,7 +25,7 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { code, empresa_id } = await req.json();
+    const { code, empresa_id, redirect_uri } = await req.json();
 
     if (!code || !empresa_id) {
       return new Response(JSON.stringify({ error: "Faltan parámetros requeridos: code, empresa_id." }), {
@@ -57,38 +57,41 @@ serve(async (req) => {
       });
     }
 
-    // 2. Realizar petición de intercambio de token a la API de TikTok
-    // Endpoint oficial: https://business-api.tiktok.com/open_api/v1.3/oauth2/token/
-    const exchangeUrl = "https://business-api.tiktok.com/open_api/v1.3/oauth2/token/";
-    const payload = {
-      client_key: tiktok_app_id,
-      client_secret: tiktok_app_secret,
-      code: code,
-      grant_type: "authorization_code",
-    };
+    // 2. Realizar petición de intercambio de token a la API v2 de TikTok
+    // Endpoint oficial v2: https://open.tiktokapis.com/v2/oauth/token/
+    const exchangeUrl = "https://open.tiktokapis.com/v2/oauth/token/";
+    
+    const bodyParams = new URLSearchParams();
+    bodyParams.append("client_key", tiktok_app_id);
+    bodyParams.append("client_secret", tiktok_app_secret);
+    bodyParams.append("code", code);
+    bodyParams.append("grant_type", "authorization_code");
+    if (redirect_uri) {
+      bodyParams.append("redirect_uri", redirect_uri);
+    }
 
     const res = await fetch(exchangeUrl, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: JSON.stringify(payload),
+      body: bodyParams.toString(),
     });
 
     const resData = await res.json();
 
-    if (resData.code !== 0) {
+    if (resData.error) {
       return new Response(JSON.stringify({ 
         error: "Error retornado por la API de TikTok al intercambiar token.", 
-        details: resData.message || resData 
+        details: resData.error_description || resData.error 
       }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const accessToken = resData.data.access_token;
-    const refreshToken = resData.data.refresh_token;
+    const accessToken = resData.access_token;
+    const refreshToken = resData.refresh_token;
 
     if (!accessToken) {
       return new Response(JSON.stringify({ error: "No se recibió un access_token válido de TikTok." }), {

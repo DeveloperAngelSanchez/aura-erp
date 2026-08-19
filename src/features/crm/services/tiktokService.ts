@@ -59,9 +59,9 @@ export const tiktokService = {
   /**
    * Intercambia el código de autorización temporal de TikTok por tokens reales
    */
-  async intercambiarCodigoOauth(empresaId: string, code: string): Promise<any> {
+  async intercambiarCodigoOauth(empresaId: string, code: string, redirectUri: string): Promise<any> {
     const { data, error } = await supabase.functions.invoke('tiktok-oauth', {
-      body: { code, empresa_id: empresaId },
+      body: { code, empresa_id: empresaId, redirect_uri: redirectUri },
     });
 
     if (error) throw error;
