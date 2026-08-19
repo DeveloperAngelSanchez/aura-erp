@@ -431,4 +431,37 @@ export const tiktokService = {
 
     return conv as CRMConversacion;
   },
+
+  /**
+   * Elimina todas las conversaciones y mensajes de prueba (prefijo tk_usr_) de la base de datos para una empresa
+   */
+  async eliminarConversacionesSimuladas(empresaId: string): Promise<void> {
+    // 1. Obtener las conversaciones de prueba
+    const { data: convs, error: errFetch } = await supabase
+      .from('crm_conversaciones')
+      .select('id')
+      .eq('empresa_id', empresaId)
+      .like('tiktok_user_id', 'tk_usr_%');
+
+    if (errFetch || !convs || convs.length === 0) return;
+    const ids = convs.map((c) => c.id);
+
+    // 2. Eliminar mensajes asociados
+    await supabase
+      .from('crm_mensajes')
+      .delete()
+      .in('conversacion_id', ids);
+
+    // 3. Eliminar vínculos de etiquetas
+    await supabase
+      .from('crm_conversacion_etiquetas')
+      .delete()
+      .in('conversacion_id', ids);
+
+    // 4. Eliminar conversaciones
+    await supabase
+      .from('crm_conversaciones')
+      .delete()
+      .in('id', ids);
+  },
 };

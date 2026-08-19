@@ -23,7 +23,13 @@ export function useTikTokChat(empresaId: string | null) {
     if (!empresaId) return;
     try {
       setLoading(true);
-      const data = await tiktokService.fetchConversaciones(empresaId, filtroEstado, busqueda);
+      let data = await tiktokService.fetchConversaciones(empresaId, filtroEstado, busqueda);
+      
+      // Si la cuenta está conectada, excluir estrictamente chats simulados de prueba (que empiezan con 'tk_usr_')
+      if (isConectado) {
+        data = data.filter((c) => !c.tiktok_user_id.startsWith('tk_usr_'));
+      }
+
       setConversaciones(data);
       
       // Actualizar también la conversación activa en pantalla si cambia
@@ -36,7 +42,7 @@ export function useTikTokChat(empresaId: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [empresaId, filtroEstado, busqueda, conversacionActiva]);
+  }, [empresaId, filtroEstado, busqueda, conversacionActiva, isConectado]);
 
   // Cargar configuraciones iniciales de la empresa (etiquetas, respuestas rápidas, agentes, configuraciones)
   const cargarConfiguracionesCrm = useCallback(async () => {
@@ -56,6 +62,19 @@ export function useTikTokChat(empresaId: string | null) {
       console.error('Error al cargar configuraciones CRM:', err);
     }
   }, [empresaId]);
+
+  // Limpiar chats de prueba de la base de datos si la cuenta de TikTok real ya está conectada
+  useEffect(() => {
+    if (isConectado && empresaId) {
+      tiktokService.eliminarConversacionesSimuladas(empresaId)
+        .then(() => {
+          cargarConversaciones();
+        })
+        .catch((err) => {
+          console.error('Error al limpiar chats de prueba:', err);
+        });
+    }
+  }, [isConectado, empresaId, cargarConversaciones]);
 
   // Cargar lista de conversaciones y configuraciones al cambiar filtros o iniciar
   useEffect(() => {
