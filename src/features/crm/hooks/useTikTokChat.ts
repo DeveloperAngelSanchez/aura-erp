@@ -16,6 +16,7 @@ export function useTikTokChat(empresaId: string | null) {
   const [etiquetasConfig, setEtiquetasConfig] = useState<CRMEtiqueta[]>([]);
   const [respuestasRapidas, setRespuestasRapidas] = useState<CRMRespuestaRapida[]>([]);
   const [agentes, setAgentes] = useState<{ id: string; nombre: string; rol: string }[]>([]);
+  const [isConectado, setIsConectado] = useState(false);
 
   // Cargar lista de conversaciones
   const cargarConversaciones = useCallback(async () => {
@@ -37,18 +38,20 @@ export function useTikTokChat(empresaId: string | null) {
     }
   }, [empresaId, filtroEstado, busqueda, conversacionActiva]);
 
-  // Cargar configuraciones iniciales de la empresa (etiquetas, respuestas rápidas, agentes)
+  // Cargar configuraciones iniciales de la empresa (etiquetas, respuestas rápidas, agentes, configuraciones)
   const cargarConfiguracionesCrm = useCallback(async () => {
     if (!empresaId) return;
     try {
-      const [etiquetasData, respuestasData, agentesData] = await Promise.all([
+      const [etiquetasData, respuestasData, agentesData, configData] = await Promise.all([
         tiktokService.fetchEtiquetas(empresaId),
         tiktokService.fetchRespuestasRapidas(empresaId),
         tiktokService.fetchAgentes(empresaId),
+        tiktokService.fetchConfiguracion(empresaId),
       ]);
       setEtiquetasConfig(etiquetasData);
       setRespuestasRapidas(respuestasData);
       setAgentes(agentesData);
+      setIsConectado(!!configData?.access_token && configData?.activo);
     } catch (err) {
       console.error('Error al cargar configuraciones CRM:', err);
     }
@@ -241,7 +244,7 @@ export function useTikTokChat(empresaId: string | null) {
 
   // Simular mensaje entrante (Sandbox)
   const simularMensaje = async () => {
-    if (!empresaId) return;
+    if (!empresaId || isConectado) return;
     try {
       const nuevaConv = await tiktokService.simularMensajeEntrante(empresaId);
       await cargarConversaciones();
@@ -277,5 +280,6 @@ export function useTikTokChat(empresaId: string | null) {
     crearEtiqueta,
     guardarRespuestaRapida,
     eliminarRespuestaRapida,
+    isConectado,
   };
 }

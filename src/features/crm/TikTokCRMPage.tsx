@@ -74,6 +74,7 @@ export const TikTokCRMPage: React.FC = () => {
     vincularEtiqueta,
     desvincularEtiqueta,
     crearEtiqueta,
+    isConectado,
   } = useTikTokChat(empresaId);
 
   const [mostrarPanelDetalle, setMostrarPanelDetalle] = useState(true);
@@ -296,6 +297,7 @@ export const TikTokCRMPage: React.FC = () => {
             onSelectConversacion={handleSelectConversacion}
             onSimularMensaje={simularMensaje}
             loading={loading}
+            isConectado={isConectado}
           />
         </div>
 

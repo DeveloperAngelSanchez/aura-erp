@@ -21,6 +21,7 @@ interface ChatListProps {
   onSelectConversacion: (conv: CRMConversacion) => void;
   onSimularMensaje: () => void;
   loading: boolean;
+  isConectado?: boolean;
 }
 
 export const ChatList: React.FC<ChatListProps> = ({
@@ -33,6 +34,7 @@ export const ChatList: React.FC<ChatListProps> = ({
   onSelectConversacion,
   onSimularMensaje,
   loading,
+  isConectado = false,
 }) => {
   const formatearFechaHora = (isoStr: string) => {
     if (!isoStr) return '';
@@ -91,14 +93,16 @@ export const ChatList: React.FC<ChatListProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onSimularMensaje}
-            title="Simular mensaje entrante (Sandbox)"
-            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors border border-blue-200 shadow-sm"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Simular Chat</span>
-          </button>
+          {!isConectado && (
+            <button
+              onClick={onSimularMensaje}
+              title="Simular mensaje entrante (Sandbox)"
+              className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors border border-blue-200 shadow-sm"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Simular Chat</span>
+            </button>
+          )}
         </div>
 
         {/* Buscador */}
