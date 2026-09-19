@@ -62,7 +62,7 @@ export const TableManagerView: React.FC<TableManagerViewProps> = ({
   return (
     <div className="flex-1 bg-slate-50 flex flex-col h-full overflow-hidden">
       {/* Top Header / Stats Bar */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap justify-between items-center gap-4 shadow-sm shrink-0">
+      <div className="bg-white border-b border-slate-200 px-3 py-3 sm:px-6 sm:py-4 flex flex-wrap justify-between items-center gap-2.5 sm:gap-4 shadow-sm shrink-0">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 shadow-2xs">
             <LayoutGrid className="w-5 h-5" />
@@ -74,43 +74,44 @@ export const TableManagerView: React.FC<TableManagerViewProps> = ({
                 {totalMesas} {totalMesas === 1 ? 'mesa' : 'mesas'}
               </span>
             </h2>
-            <p className="text-xs text-slate-500 font-medium">
+            <p className="text-xs text-slate-500 font-medium hidden sm:block">
               Selecciona una mesa para gestionar la comanda o aperturar atención
             </p>
           </div>
         </div>
 
         {/* Status Counters */}
-        <div className="flex items-center gap-2 sm:gap-4">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold shadow-2xs">
+        <div className="flex items-center gap-1.5 sm:gap-4 flex-wrap">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-[11px] sm:text-xs font-bold shadow-2xs">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>{disponiblesCount} Disponibles</span>
+            <span>{disponiblesCount} <span className="hidden sm:inline">Disponibles</span></span>
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200/80 text-blue-800 text-xs font-bold shadow-2xs">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-blue-50 border border-blue-200/80 text-blue-800 text-[11px] sm:text-xs font-bold shadow-2xs">
             <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-            <span>{ocupadasCount} Ocupadas</span>
+            <span>{ocupadasCount} <span className="hidden sm:inline">Ocupadas</span></span>
           </div>
 
           {pendientesCount > 0 && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-800 text-xs font-bold shadow-2xs">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-800 text-[11px] sm:text-xs font-bold shadow-2xs">
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-bounce"></span>
-              <span>{pendientesCount} Cuenta Pedida</span>
+              <span>{pendientesCount} <span className="hidden sm:inline">Cuenta Pedida</span></span>
             </div>
           )}
 
           <button
             onClick={onRefresh}
-            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all border border-transparent hover:border-slate-200 cursor-pointer"
-            title="Refrescar mesas"
+            className="p-2 sm:px-3 sm:py-1.5 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 ml-auto sm:ml-0"
+            title="Refrescar Estado de Mesas"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-600' : ''}`} />
+            <span className="hidden sm:inline">Refrescar</span>
           </button>
         </div>
       </div>
 
-      {/* Grid Container */}
-      <div className="flex-1 overflow-y-auto p-6">
+      {/* Mesas Grid Container */}
+      <div className="flex-1 overflow-y-auto p-3 sm:p-6 touch-momentum pb-[max(env(safe-area-inset-bottom),2rem)]">
         {loading ? (
           <div className="h-64 flex flex-col items-center justify-center text-slate-400 gap-3">
             <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin"></div>

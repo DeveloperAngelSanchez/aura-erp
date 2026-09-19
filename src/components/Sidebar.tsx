@@ -20,6 +20,7 @@ import {
   Clock,
   ChevronDown,
   MessageSquare,
+  WalletCards,
 } from 'lucide-react';
 
 const translations = {
@@ -29,6 +30,7 @@ const translations = {
     purchases: 'Compras',
     inventory: 'Inventario / Logística',
     pos: 'Punto de venta POS',
+    cuentasCobrar: 'Cuentas por Cobrar',
     hr: 'Personal / Asistencia',
     reports: 'Reportes',
     settings: 'Configuración',
@@ -43,6 +45,7 @@ const translations = {
     purchases: 'Purchases',
     inventory: 'Inventory & Logistics',
     pos: 'Point of sale POS',
+    cuentasCobrar: 'Accounts Receivable',
     hr: 'Staff & Attendance',
     reports: 'Reports',
     settings: 'Settings',
@@ -120,7 +123,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMob
     { name: t.catalog, path: '/admin/catalog', icon: Package, roles: ['admin'] },
     { name: t.purchases, path: '/admin/purchases', icon: Truck, roles: ['admin'] },
     { name: t.inventory, path: '/admin/inventory', icon: Boxes, roles: ['admin'] },
-    { name: t.pos, path: '/pos', icon: ShoppingCart, roles: ['admin', 'cajero'] },
+    { name: t.pos, path: '/pos', icon: ShoppingCart, roles: ['admin', 'cajero', 'mesero', 'asistente'] },
+    { name: t.cuentasCobrar, path: '/admin/cuentas-cobrar', icon: WalletCards, roles: ['admin', 'cajero'] },
     { name: rubroConfig.labels.staffTitle, path: '/admin/staff', icon: Users, roles: ['admin'] },
     {
       name: t.reports,
@@ -132,7 +136,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMob
       ],
     },
     { name: t.contacts, path: '/admin/customers', icon: UserCheck, roles: ['admin'] },
-    { name: t.crmTiktok, path: '/crm/tiktok', icon: MessageSquare, roles: ['admin', 'cajero'] },
+    ...((typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '0.0.0.0' || window.location.hostname.endsWith('.localhost'))) 
+      ? [{ name: t.crmTiktok, path: '/crm/tiktok', icon: MessageSquare, roles: ['admin', 'cajero'] }] 
+      : []),
     { name: t.settings, path: '/admin/settings', icon: Settings, roles: ['admin'] },
     { name: lang === 'es' ? 'Aprobaciones Caja' : 'Cash Approvals', path: '/admin/cash-approvals', icon: DollarSign, roles: ['admin'] },
   ];
@@ -159,16 +165,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMob
         />
       )}
 
-      <aside className={`bg-white border-r border-slate-200 flex flex-col justify-between h-screen sticky top-0 text-slate-700 shadow-sm z-40 transition-all duration-300 ${
+      <aside className={`bg-white border-r border-slate-200 flex flex-col justify-between text-slate-700 shadow-sm transition-transform duration-300 ease-in-out ${
         mobileOpen 
-          ? 'fixed inset-y-0 left-0 w-64 translate-x-0' 
-          : 'max-md:-translate-x-full md:translate-x-0'
-      } ${
+          ? 'fixed inset-y-0 left-0 w-72 max-w-[85vw] z-50 translate-x-0 shadow-2xl h-[100dvh]' 
+          : 'fixed inset-y-0 left-0 w-72 max-w-[85vw] z-50 -translate-x-full md:translate-x-0 h-[100dvh]'
+      } md:static md:sticky md:top-0 md:h-screen md:z-30 md:shadow-none ${
         isCollapsed ? 'md:w-20' : 'md:w-64'
       }`}>
         <div className="flex flex-col flex-1 overflow-y-auto">
           
-          <div className="flex items-center justify-between px-4 py-4 border-b border-slate-100 min-h-[64px]">
+          <div className="flex items-center justify-between px-4 py-4 pt-[max(env(safe-area-inset-top),1rem)] md:pt-4 border-b border-slate-100 min-h-[64px]">
             {isCollapsed && !mobileOpen ? (
               <button
                 onClick={toggleSidebar}
@@ -212,18 +218,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMob
                     <li key={item.name}>
                       <button
                         onClick={() => {
-                          if (isCollapsed) {
+                          if (isCollapsed && !mobileOpen) {
                             const firstChild = item.children[0];
                             if (firstChild && onCloseMobile) onCloseMobile();
                             return;
                           }
                           toggleGroup(item.name);
                         }}
-                        title={isCollapsed ? item.name : undefined}
-                        className={`w-full flex items-center transition-all cursor-pointer ${
+                        title={isCollapsed && !mobileOpen ? item.name : undefined}
+                        className={`w-full flex items-center rounded-xl text-sm font-semibold hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-all cursor-pointer ${
                           isCollapsed 
-                            ? 'md:justify-center p-3 rounded-xl justify-start gap-3 px-4 py-3 text-sm font-semibold hover:bg-slate-50 text-slate-500 hover:text-slate-800'
-                            : 'gap-3 px-4 py-3 rounded-xl text-sm font-semibold hover:bg-slate-50 text-slate-500 hover:text-slate-800'
+                            ? 'gap-3 px-4 py-3 md:gap-0 md:justify-center md:px-0 md:py-3' 
+                            : 'gap-3 px-4 py-3'
                         }`}
                       >
                         <Icon className="w-4 h-4 transition-colors shrink-0" />
@@ -234,7 +240,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMob
                           </>
                         )}
                       </button>
-                      {isOpen && !isCollapsed && (
+                      {isOpen && (!isCollapsed || mobileOpen) && (
                         <div className="ml-3 mt-0.5 space-y-0.5 border-l-2 border-slate-200 pl-2">
                           {item.children.map((child) => {
                             const ChildIcon = child.icon;
@@ -270,12 +276,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMob
                       to={item.path}
                       end={item.path === '/admin'}
                       onClick={onCloseMobile}
-                      title={isCollapsed ? item.name : undefined}
+                      title={isCollapsed && !mobileOpen ? item.name : undefined}
                       className={({ isActive }) =>
-                        `flex items-center transition-all ${
+                        `flex items-center rounded-xl text-sm font-semibold transition-all ${
                           isCollapsed 
-                            ? 'md:justify-center p-3 rounded-xl' 
-                            : 'gap-3 px-4 py-3 rounded-xl text-sm font-semibold'
+                            ? 'gap-3 px-4 py-3 md:gap-0 md:justify-center md:px-0 md:py-3' 
+                            : 'gap-3 px-4 py-3'
                         } ${
                           isActive
                             ? 'bg-slate-100/80 text-slate-900 border border-slate-200/50 shadow-sm'

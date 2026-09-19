@@ -90,7 +90,7 @@ interface ComponentInput {
 const translations = {
   es: {
     title: 'Catálogo de Items',
-    subtitle: 'Administra los productos, servicios y combos (kits) de la barbería.',
+    subtitle: 'Administra los productos, servicios y combos (kits) de tu catálogo comercial.',
     export: 'Exportar',
     newItem: 'Nuevo Item',
     filterAll: 'Todos los tipos',
@@ -145,7 +145,7 @@ const translations = {
   },
   en: {
     title: 'Catalog of Items',
-    subtitle: 'Manage the barbershop products, services, and combos (kits).',
+    subtitle: 'Manage products, services, and combos (kits) of your commercial catalog.',
     export: 'Export',
     newItem: 'New Item',
     filterAll: 'All Types',

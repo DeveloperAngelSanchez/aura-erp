@@ -137,12 +137,12 @@ export const EditSaleModal: React.FC<Props> = ({ sale, onClose, onSuccess }) => 
 
   const loadInitialData = async () => {
     try {
-      const branchIds = impersonating ? activeBranchIds : [profile?.sucursal_id];
+      const branchIds = activeBranchIds.length > 0 ? activeBranchIds : (profile?.sucursal_id ? [profile.sucursal_id] : []);
       const targetBranch = branchIds[0];
 
       const [pagosRes, barberosRes, configRes] = await Promise.all([
         supabase.from('venta_pagos').select('metodo_pago, monto').eq('venta_id', sale.id),
-        supabase.from('perfiles').select('id, nombre').in('sucursal_id', branchIds).eq('rol', 'barbero').eq('activo', true),
+        supabase.from('perfiles').select('id, nombre').in('sucursal_id', branchIds).in('rol', ['barbero', 'mesero', 'cajero', 'admin']).eq('activo', true),
         supabase.from('configuraciones').select('metodos_pago').eq('sucursal_id', targetBranch).maybeSingle(),
       ]);
 

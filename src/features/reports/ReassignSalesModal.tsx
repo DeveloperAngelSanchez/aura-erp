@@ -105,7 +105,7 @@ export const ReassignSalesModal: React.FC<ReassignSalesModalProps> = ({
   const loadTurns = async () => {
     setLoadingTurns(true);
     try {
-      const branchFilter = impersonating ? activeBranchIds : [profile?.sucursal_id];
+      const branchFilter = activeBranchIds.length > 0 ? activeBranchIds : (profile?.sucursal_id ? [profile.sucursal_id] : []);
       const { data, error: err } = await supabase
         .from('vista_reporte_cierres_turno')
         .select('id, sucursal_nombre, usuario_nombre, abierto_en, cerrado_en, total_ventas')
@@ -132,7 +132,7 @@ export const ReassignSalesModal: React.FC<ReassignSalesModalProps> = ({
     setLoadingSales(true);
     setError(null);
     try {
-      const branchFilter = impersonating ? activeBranchIds : [profile?.sucursal_id];
+      const branchFilter = activeBranchIds.length > 0 ? activeBranchIds : (profile?.sucursal_id ? [profile.sucursal_id] : []);
       let query = supabase
         .from('ventas')
         .select('id, correlativo, total, metodo_pago, creado_en, cliente_nombre, turno_id, sucursal_id, barbero:perfiles!ventas_barbero_id_fkey(nombre), sucursal:sucursales!ventas_sucursal_id_fkey(nombre)')

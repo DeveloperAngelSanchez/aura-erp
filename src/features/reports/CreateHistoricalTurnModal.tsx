@@ -13,6 +13,7 @@ interface Usuario {
   id: string;
   nombre: string;
   rol: string;
+  sucursal_id?: string;
 }
 
 interface CreateHistoricalTurnModalProps {
@@ -62,33 +63,61 @@ export const CreateHistoricalTurnModal: React.FC<CreateHistoricalTurnModalProps>
 
   const loadInitialData = async () => {
     setLoading(true);
+    setError(null);
     try {
-      // 1. Load branches
-      const branchIds = impersonating && activeBranchIds.length > 0 ? activeBranchIds : (profile?.sucursal_id ? [profile.sucursal_id] : []);
-      let branchQuery = supabase.from('sucursales').select('id, nombre').order('nombre');
-      if (branchIds.length > 0) {
-        branchQuery = branchQuery.in('id', branchIds);
+      // 1. Determinar las sucursales pertenecientes a la empresa activa
+      const branchIds = activeBranchIds.length > 0 
+        ? activeBranchIds 
+        : (profile?.sucursal_id ? [profile.sucursal_id] : []);
+
+      if (branchIds.length === 0) {
+        setSucursales([]);
+        setCajeros([]);
+        setLoading(false);
+        return;
       }
-      const { data: bData, error: bErr } = await branchQuery;
+
+      const { data: bData, error: bErr } = await supabase
+        .from('sucursales')
+        .select('id, nombre')
+        .in('id', branchIds)
+        .order('nombre');
+
       if (bErr) throw bErr;
 
       setSucursales(bData || []);
+      const validBranchIds = (bData || []).map((b) => b.id);
+
       if (bData && bData.length > 0) {
         setSucursalId(bData[0].id);
       }
 
-      // 2. Load staff/cashiers
+      if (validBranchIds.length === 0) {
+        setCajeros([]);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Cargar únicamente cajeros y administradores de las sucursales de ESTA empresa
       const { data: uData, error: uErr } = await supabase
         .from('perfiles')
-        .select('id, nombre, rol')
+        .select('id, nombre, rol, sucursal_id')
+        .in('sucursal_id', validBranchIds)
+        .eq('activo', true)
+        .in('rol', ['cajero', 'admin', 'jefe', 'asistente'])
         .order('nombre');
+
       if (uErr) throw uErr;
 
-      setCajeros(uData || []);
-      if (profile?.id) {
+      const loadedCajeros = (uData || []) as Usuario[];
+      setCajeros(loadedCajeros);
+
+      if (profile?.id && loadedCajeros.some((u) => u.id === profile.id)) {
         setUsuarioId(profile.id);
-      } else if (uData && uData.length > 0) {
-        setUsuarioId(uData[0].id);
+      } else if (loadedCajeros.length > 0) {
+        setUsuarioId(loadedCajeros[0].id);
+      } else {
+        setUsuarioId('');
       }
     } catch (err: any) {
       console.error('Error loading data for historical turn:', err);
@@ -267,11 +296,15 @@ export const CreateHistoricalTurnModal: React.FC<CreateHistoricalTurnModalProps>
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-600 text-slate-800"
                     required
                   >
-                    {cajeros.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.nombre} ({u.rol})
-                      </option>
-                    ))}
+                    {cajeros.length === 0 ? (
+                      <option value="" disabled>No hay cajeros asignados en esta empresa</option>
+                    ) : (
+                      cajeros.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.nombre} ({u.rol})
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
               </div>

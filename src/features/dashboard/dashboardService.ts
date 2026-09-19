@@ -145,7 +145,8 @@ export async function loadDashboard(branchIds: string[], range: DateRange): Prom
       .in('sucursal_id', branchIds),
 
     // Low stock count
-    supabase.from('vista_items_stock_bajo').select('id', { count: 'exact', head: true }),
+    supabase.from('vista_items_stock_bajo').select('id', { count: 'exact', head: true })
+      .in('sucursal_id', branchIds),
 
     // Recent sales in range
     supabase.from('vista_reporte_ventas').select('id, correlativo, total, metodo_pago, creado_en, usuario_nombre, cliente_nombre')
@@ -157,6 +158,7 @@ export async function loadDashboard(branchIds: string[], range: DateRange): Prom
 
     // Low stock items list
     supabase.from('vista_items_stock_bajo').select('nombre, stock_actual, stock_minimo')
+      .in('sucursal_id', branchIds)
       .order('stock_actual', { ascending: true })
       .limit(5),
   ]);

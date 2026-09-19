@@ -167,7 +167,7 @@ export const CloseReport: React.FC = () => {
     setLoading(true);
     setCurrentPage(1);
     try {
-      const branchFilter = impersonating ? activeBranchIds : [profile?.sucursal_id];
+      const branchFilter = activeBranchIds.length > 0 ? activeBranchIds : (profile?.sucursal_id ? [profile.sucursal_id] : []);
       const { data, error } = await supabase
         .from('vista_reporte_cierres_turno')
         .select('*')

@@ -171,7 +171,7 @@ export const StaffManager: React.FC = () => {
   const loadStaff = async () => {
     setLoadingStaff(true);
     try {
-      const branchIds = impersonating ? activeBranchIds : [myProfile?.sucursal_id];
+      const branchIds = activeBranchIds.length > 0 ? activeBranchIds : (myProfile?.sucursal_id ? [myProfile.sucursal_id] : []);
       const { data: sucursalData } = await supabase.from('sucursales').select('id, nombre').in('id', branchIds);
       const sucursalMap: Record<string, string> = {};
       (sucursalData || []).forEach((s: any) => { sucursalMap[s.id] = s.nombre; });
@@ -199,7 +199,7 @@ export const StaffManager: React.FC = () => {
   };
 
   const loadSucursales = async () => {
-    const branchIds = impersonating ? activeBranchIds : [myProfile?.sucursal_id];
+    const branchIds = activeBranchIds.length > 0 ? activeBranchIds : (myProfile?.sucursal_id ? [myProfile.sucursal_id] : []);
     const { data } = await supabase.from('sucursales').select('id, nombre').in('id', branchIds);
     setSucursales(data || []);
   };
@@ -215,7 +215,7 @@ export const StaffManager: React.FC = () => {
       const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
       const monthStart = new Date(); monthStart.setDate(1);
       const fmt = (d: Date) => d.toISOString().split('T')[0];
-      const branchIds = impersonating ? activeBranchIds : [myProfile?.sucursal_id];
+      const branchIds = activeBranchIds.length > 0 ? activeBranchIds : (myProfile?.sucursal_id ? [myProfile.sucursal_id] : []);
 
       const allowedRoles = rubroConfig.rolesDisponibles.map(r => r.id);
       const { data: barberProfiles } = await supabase

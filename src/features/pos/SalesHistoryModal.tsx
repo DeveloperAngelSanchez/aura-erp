@@ -102,9 +102,9 @@ export const SalesHistoryModal: React.FC<Props> = ({ onClose, historicalTurnId }
     >
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="bg-white border border-slate-200 rounded-2xl w-full max-w-xl shadow-xl flex flex-col max-h-[85vh] animate-in fade-in zoom-in duration-205"
+        className="bg-white border border-slate-200 rounded-2xl w-full max-w-xl shadow-xl flex flex-col max-h-[90dvh] animate-in fade-in zoom-in duration-205"
       >
-        <div className="flex justify-between items-center border-b border-slate-100 px-6 py-4 shrink-0">
+        <div className="flex justify-between items-center border-b border-slate-100 px-4 py-3 sm:px-6 sm:py-4 shrink-0">
           <h2 className="text-sm font-bold text-slate-950 flex items-center gap-2">
             <History className="w-4.5 h-4.5 text-blue-600" />
             <span>{lang === 'es' ? 'Historial de Ventas' : 'Sales History'}</span>
@@ -115,7 +115,7 @@ export const SalesHistoryModal: React.FC<Props> = ({ onClose, historicalTurnId }
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-3">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 touch-momentum">
           {successMessage && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded-xl text-xs flex items-center gap-2 shadow-sm">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />

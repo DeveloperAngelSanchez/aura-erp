@@ -10,6 +10,8 @@ export interface Empresa {
   rubro: BusinessRubro;
   activa: boolean;
   logo_url?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface SucursalBasica {
@@ -90,7 +92,7 @@ export const EmpresaProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       const { data } = await supabase
         .from('empresas')
-        .select('id, nombre, rubro, activa, logo_url')
+        .select('id, nombre, rubro, activa, logo_url, created_at, updated_at')
         .order('nombre', { ascending: true });
 
       if (data) {
@@ -117,11 +119,20 @@ export const EmpresaProvider: React.FC<{ children: React.ReactNode }> = ({ child
         .select('id, empresa_id, empresas(id, nombre, rubro)')
         .eq('id', profile.sucursal_id)
         .single()
-        .then(({ data }) => {
+        .then(async ({ data }) => {
           if (data) {
             if (data.empresa_id) {
               setActiveEmpresaId(data.empresa_id);
-              setActiveBranchIds([data.id]);
+              const { data: sucursalesEmpresa } = await supabase
+                .from('sucursales')
+                .select('id')
+                .eq('empresa_id', data.empresa_id);
+
+              if (sucursalesEmpresa && sucursalesEmpresa.length > 0) {
+                setActiveBranchIds(sucursalesEmpresa.map((s: { id: string }) => s.id));
+              } else {
+                setActiveBranchIds([data.id]);
+              }
             }
             const emp = data.empresas as any;
             if (emp?.nombre) {

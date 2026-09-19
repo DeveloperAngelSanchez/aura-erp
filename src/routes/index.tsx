@@ -19,6 +19,7 @@ import { CustomerManager } from '../features/customers/CustomerManager.tsx';
 import { StaffManager } from '../features/staff/StaffManager.tsx';
 import { CloseTurnPage } from '../features/cash/CloseTurnPage.tsx';
 import { TikTokCRMPage } from '../features/crm/TikTokCRMPage.tsx';
+import { CuentasCobrarManager } from '../features/cuentas-cobrar/CuentasCobrarManager.tsx';
 
 import { LandingPage } from '../features/landing/LandingPage.tsx';
 import { TermsOfService } from '../features/legal/TermsOfService.tsx';
@@ -35,6 +36,13 @@ export const AppRoutes: React.FC = () => {
     if (profile.rol === 'barbero') return '/barber';
     return '/login';
   };
+
+  const isLocalhost = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '0.0.0.0' ||
+    window.location.hostname.endsWith('.localhost')
+  );
 
   return (
     <Routes>
@@ -96,24 +104,27 @@ export const AppRoutes: React.FC = () => {
         <Route path="cash-approvals" element={<CashApprovals />} />
         <Route path="staff" element={<StaffManager />} />
         <Route path="customers" element={<CustomerManager />} />
-        <Route path="crm/tiktok" element={<TikTokCRMPage />} />
+        <Route path="cuentas-cobrar" element={<CuentasCobrarManager />} />
+        {isLocalhost && <Route path="crm/tiktok" element={<TikTokCRMPage />} />}
       </Route>
 
-      <Route 
-        path="/crm/tiktok" 
-        element={
-          <ProtectedRoute allowedRoles={['admin', 'cajero']}>
-            <AdminLayout />
-          </ProtectedRoute>
-        } 
-      >
-        <Route index element={<TikTokCRMPage />} />
-      </Route>
+      {isLocalhost && (
+        <Route 
+          path="/crm/tiktok" 
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'cajero']}>
+              <AdminLayout />
+            </ProtectedRoute>
+          } 
+        >
+          <Route index element={<TikTokCRMPage />} />
+        </Route>
+      )}
 
       <Route 
         path="/pos" 
         element={
-          <ProtectedRoute allowedRoles={['admin', 'cajero']}>
+          <ProtectedRoute allowedRoles={['admin', 'cajero', 'mesero', 'asistente']}>
             <POSTerminal />
           </ProtectedRoute>
         } 

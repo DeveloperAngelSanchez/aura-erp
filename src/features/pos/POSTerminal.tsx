@@ -24,6 +24,9 @@ import {
   UserPlus,
   ArrowLeft,
   Utensils,
+  LayoutDashboard,
+  WalletCards,
+  Calendar,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CartPanel } from './CartPanel';
@@ -477,6 +480,12 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
   // Checkout & Split Payments State
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [pagos, setPagos] = useState<{ metodo_pago: string; monto: string }[]>([]);
+  // Ventas al Crédito State
+  const [condicionVenta, setCondicionVenta] = useState<'contado' | 'credito'>('contado');
+  const [abonoInicialCredito, setAbonoInicialCredito] = useState<string>('0');
+  const [metodoAbonoInicial, setMetodoAbonoInicial] = useState<string>('efectivo');
+  const [numCuotasCredito, setNumCuotasCredito] = useState<number>(1);
+  const [diasVencimientoCredito, setDiasVencimientoCredito] = useState<number>(30);
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [openBaseCash, setOpenBaseCash] = useState('100.00');
@@ -497,11 +506,20 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
       : profile?.sucursal_id;
     if (!branchId) return;
     try {
+      const targetRoles = rubroConfig.id === 'barberia' 
+        ? ['barbero'] 
+        : rubroConfig.id === 'restaurante' 
+          ? ['mesero', 'cajero', 'admin'] 
+          : ['cajero', 'admin', 'asistente'];
+
+      const branches = impersonating && !isHistoricalMode ? activeBranchIds : [branchId];
+
       const { data, error } = await supabase
         .from('perfiles')
         .select('id, nombre')
-        .in('sucursal_id', impersonating && !isHistoricalMode ? activeBranchIds : [branchId])
-        .eq('rol', 'barbero');
+        .in('sucursal_id', branches)
+        .in('rol', targetRoles)
+        .eq('activo', true);
 
       if (!error && data) {
         setBarberos(data);
@@ -782,6 +800,11 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
 
     const defaultMethod = config?.metodos_pago_favoritos?.[0] || 'efectivo';
     setPagos([{ metodo_pago: defaultMethod, monto: total.toString() }]);
+    setCondicionVenta('contado');
+    setAbonoInicialCredito('0');
+    setMetodoAbonoInicial('efectivo');
+    setNumCuotasCredito(1);
+    setDiasVencimientoCredito(30);
     setShowCheckoutModal(true);
   };
 
@@ -794,23 +817,37 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
     const totalIngresado = pagos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0);
     const vuelto = Math.max(0, totalIngresado - totalVenta);
 
-    // Validar que se haya cubierto la venta
-    if (totalIngresado < totalVenta) {
-      alert(lang === 'es' ? 'Falta cubrir el saldo total de la venta.' : 'Remaining balance must be covered.');
-      return;
-    }
+    if (condicionVenta === 'credito') {
+      const clienteNombreActual = checkoutClienteNombre.trim();
+      if (!clienteNombreActual || clienteNombreActual.toLowerCase() === 'cliente general') {
+        alert(lang === 'es' ? 'Para ventas al crédito es obligatorio registrar el nombre del cliente.' : 'Customer name is required for credit sales.');
+        return;
+      }
 
-    // Validar que todos los pagos tengan un método seleccionado
-    if (pagos.some(p => p.metodo_pago === '')) {
-      alert(lang === 'es' ? 'Por favor, selecciona un método de pago para cada línea.' : 'Please select a payment method for each line.');
-      return;
-    }
+      const initialAmount = Math.max(0, parseFloat(abonoInicialCredito) || 0);
+      if (initialAmount > totalVenta) {
+        alert(lang === 'es' ? 'El abono inicial no puede ser mayor al total de la venta.' : 'Initial payment cannot exceed total sale amount.');
+        return;
+      }
+    } else {
+      // Validar que se haya cubierto la venta al contado
+      if (totalIngresado < totalVenta) {
+        alert(lang === 'es' ? 'Falta cubrir el saldo total de la venta.' : 'Remaining balance must be covered.');
+        return;
+      }
 
-    // Validar que si no hay efectivo, el pago recibido sea exacto
-    const tieneEfectivo = pagos.some(p => p.metodo_pago === 'efectivo');
-    if (vuelto > 0.01 && !tieneEfectivo) {
-      alert(lang === 'es' ? 'El cobro con tarjeta o transferencia debe ser exacto. No se permite generar vuelto sin efectivo.' : 'Card or transfer payment must be exact. Change cannot be generated without cash.');
-      return;
+      // Validar que todos los pagos tengan un método seleccionado
+      if (pagos.some(p => p.metodo_pago === '')) {
+        alert(lang === 'es' ? 'Por favor, selecciona un método de pago para cada línea.' : 'Please select a payment method for each line.');
+        return;
+      }
+
+      // Validar que si no hay efectivo, el pago recibido sea exacto
+      const tieneEfectivo = pagos.some(p => p.metodo_pago === 'efectivo');
+      if (vuelto > 0.01 && !tieneEfectivo) {
+        alert(lang === 'es' ? 'El cobro con tarjeta o transferencia debe ser exacto. No se permite generar vuelto sin efectivo.' : 'Card or transfer payment must be exact. Change cannot be generated without cash.');
+        return;
+      }
     }
 
     setProcessingSale(true);
@@ -823,23 +860,63 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
       presentacion_nombre: c.presentacionNombre || null,
     }));
 
-    // Formatear pagos para la RPC deduciendo el vuelto de la línea de efectivo
-    let vueltoRestante = vuelto;
-    const salePagos = pagos.map(p => {
-      let monto = parseFloat(p.monto) || 0;
-      if (p.metodo_pago === 'efectivo' && vueltoRestante > 0) {
-        const deduccion = Math.min(monto, vueltoRestante);
-        monto -= deduccion;
-        vueltoRestante -= deduccion;
-      }
-      return {
-        metodo_pago: p.metodo_pago,
-        monto: parseFloat(monto.toFixed(2))
-      };
-    }).filter(p => p.monto > 0.005); // Excluir líneas que quedaron en 0
+    let salePagos: { metodo_pago: string; monto: number }[] = [];
+    let cuotasList: { numero_cuota: number; monto: number; fecha_vencimiento: string }[] | null = null;
 
-    if (salePagos.length === 0) {
-      salePagos.push({ metodo_pago: 'efectivo', monto: 0 });
+    if (condicionVenta === 'credito') {
+      const initialAmount = Math.max(0, parseFloat(abonoInicialCredito) || 0);
+      if (initialAmount > 0) {
+        salePagos.push({
+          metodo_pago: metodoAbonoInicial,
+          monto: parseFloat(initialAmount.toFixed(2)),
+        });
+      }
+
+      const saldoCredito = totalVenta - initialAmount;
+      if (saldoCredito > 0 && numCuotasCredito > 0) {
+        cuotasList = [];
+        const cuotaBase = Math.floor((saldoCredito / numCuotasCredito) * 100) / 100;
+        let acumulado = 0;
+        const intervalDays = diasVencimientoCredito > 0 ? diasVencimientoCredito : 30;
+
+        for (let i = 1; i <= numCuotasCredito; i++) {
+          const d = new Date();
+          d.setDate(d.getDate() + (intervalDays * (numCuotasCredito === 1 ? 1 : i)));
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const fechaVenc = `${yyyy}-${mm}-${dd}`;
+
+          const montoCuota = (i === numCuotasCredito)
+            ? parseFloat((saldoCredito - acumulado).toFixed(2))
+            : cuotaBase;
+          acumulado += montoCuota;
+
+          cuotasList.push({
+            numero_cuota: i,
+            monto: montoCuota,
+            fecha_vencimiento: fechaVenc,
+          });
+        }
+      }
+    } else {
+      let vueltoRestante = vuelto;
+      salePagos = pagos.map(p => {
+        let monto = parseFloat(p.monto) || 0;
+        if (p.metodo_pago === 'efectivo' && vueltoRestante > 0) {
+          const deduccion = Math.min(monto, vueltoRestante);
+          monto -= deduccion;
+          vueltoRestante -= deduccion;
+        }
+        return {
+          metodo_pago: p.metodo_pago,
+          monto: parseFloat(monto.toFixed(2))
+        };
+      }).filter(p => p.monto > 0.005);
+
+      if (salePagos.length === 0) {
+        salePagos.push({ metodo_pago: 'efectivo', monto: 0 });
+      }
     }
 
     try {
@@ -887,6 +964,8 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
         p_barbero_id: selectedBarberoId || null,
         p_cliente_id: clienteId,
         p_cliente_nombre: clienteNombreActual.trim() || null,
+        p_condicion_venta: condicionVenta,
+        p_cuotas: cuotasList,
       });
 
       if (error) throw error;
@@ -975,94 +1054,102 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 w-full h-full h-[100dvh] bg-slate-50 text-slate-800 flex flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm z-30">
-        <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="Aura" className="w-8 h-8 object-contain rounded-lg" />
-          <div>
+    <div className="fixed inset-0 w-full h-full h-[100dvh] bg-slate-50 text-slate-800 flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
+      <header className="bg-white border-b border-slate-200 px-3 py-2 sm:px-6 sm:py-3.5 pt-[max(env(safe-area-inset-top),0.625rem)] flex justify-between items-center shadow-sm z-30 shrink-0 gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <img src="/logo.png" alt="Aura" className="w-7 h-7 sm:w-8 sm:h-8 object-contain rounded-lg shrink-0" />
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="font-extrabold text-base text-slate-900 tracking-tight">{t.posTitle}</h1>
+              <h1 className="font-extrabold text-sm sm:text-base text-slate-900 tracking-tight truncate">{t.posTitle}</h1>
 
               {isMesasMode && currentView === 'pos' && (
                 <button
                   onClick={() => setCurrentView('tables')}
-                  className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
+                  className="px-2 py-0.5 sm:px-2.5 sm:py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer shrink-0"
                   title="Volver al Salón de Mesas"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Volver a Mesas</span>
+                  <span className="hidden sm:inline">Volver a Mesas</span>
                 </button>
               )}
 
               {isMesasMode && currentView === 'pos' && mesasHook.activeMesa && (
-                <span className="text-xs font-extrabold px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-800 font-mono flex items-center gap-1">
-                  <Utensils className="w-3 h-3 text-blue-600" />
-                  <span>Mesa: {mesasHook.activeMesa.nombre}</span>
+                <span className="text-xs font-extrabold px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-800 font-mono flex items-center gap-1 truncate">
+                  <Utensils className="w-3 h-3 text-blue-600 shrink-0" />
+                  <span className="truncate">Mesa: {mesasHook.activeMesa.nombre}</span>
                 </span>
               )}
             </div>
 
             {isHistoricalMode ? (
-              <p className="text-[10px] text-amber-700 font-bold flex items-center gap-1 mt-0.5 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                <span>Modo Registro Histórico POS | Turno #{historicalTurnId?.slice(0, 8).toUpperCase()} | {historicalTurnData?.usuario_nombre || 'Cajero'} ({historicalTurnData?.sucursal_nombre})</span>
+              <p className="text-[10px] text-amber-700 font-bold flex items-center gap-1 mt-0.5 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md truncate">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
+                <span className="truncate">Turno #{historicalTurnId?.slice(0, 8).toUpperCase()} · Histórico</span>
               </p>
             ) : activeTurn ? (
-              <p className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>{t.drawerOpen} | {t.cashier}: {profile?.nombre}</span>
+              <p className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 mt-0.5 truncate">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                <span className="truncate">{t.drawerOpen} · {profile?.nombre}</span>
               </p>
             ) : null}
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           <button onClick={toggleLanguage}
-            className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 bg-white cursor-pointer">
+            className="p-2 sm:px-3 sm:py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 bg-white cursor-pointer"
+            title={lang === 'es' ? 'Cambiar Idioma' : 'Switch Language'}>
             <Globe className="w-3.5 h-3.5" />
-            <span>{lang === 'es' ? 'ES' : 'EN'}</span>
+            <span className="hidden sm:inline">{lang === 'es' ? 'ES' : 'EN'}</span>
           </button>
 
           {(activeTurn || isHistoricalMode) && (
             <button onClick={() => setShowCashMovementModal(true)}
-              className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm bg-white flex items-center gap-1.5 cursor-pointer">
+              className="p-2 sm:px-3 sm:py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm bg-white flex items-center gap-1.5 cursor-pointer"
+              title={t.cashMovement}>
               <DollarSign className="w-3.5 h-3.5" />
-              <span>{t.cashMovement}</span>
+              <span className="hidden md:inline">{t.cashMovement}</span>
             </button>
           )}
 
           <button onClick={() => setShowSalesHistoryModal(true)}
-            className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm bg-white flex items-center gap-1.5 cursor-pointer">
+            className="p-2 sm:px-3 sm:py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm bg-white flex items-center gap-1.5 cursor-pointer"
+            title={t.salesHistory}>
             <History className="w-3.5 h-3.5" />
-            <span>{t.salesHistory}</span>
+            <span className="hidden md:inline">{t.salesHistory}</span>
           </button>
 
           {!isHistoricalMode && profile?.rol === 'admin' && (
             <button onClick={() => navigate('/admin')}
-              className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm bg-white">
-              {lang === 'es' ? 'Volver a Admin' : 'Back to Admin'}
+              className="p-2 sm:px-3 sm:py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm bg-white flex items-center gap-1.5 cursor-pointer"
+              title={lang === 'es' ? 'Volver al Panel Admin' : 'Back to Admin'}>
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline">{lang === 'es' ? 'Admin' : 'Admin'}</span>
             </button>
           )}
 
           {isHistoricalMode ? (
             <button
               onClick={onCloseHistoricalMode}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 py-1.5 sm:px-4 sm:py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+              title="Cerrar Edición de Turno"
             >
               <LogOut className="w-4 h-4" />
-              <span>Cerrar Edición de Turno</span>
+              <span className="hidden sm:inline">Cerrar Edición</span>
             </button>
           ) : activeTurn ? (
             <button onClick={() => navigate('/pos/cierre')}
-              className="px-3 py-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
+              className="px-2.5 py-1.5 sm:px-3.5 sm:py-2 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+              title={t.closeTurnBtn}>
               <Lock className="w-3.5 h-3.5" />
-              <span>{t.closeTurnBtn}</span>
+              <span className="hidden sm:inline">{t.closeTurnBtn}</span>
             </button>
           ) : (
             <button onClick={() => { signOut().then(() => navigate('/login')).catch(console.error); }}
-              className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-rose-600 rounded-xl text-xs font-bold transition-all shadow-sm bg-white flex items-center gap-1.5">
+              className="p-2 sm:px-3 sm:py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-rose-600 rounded-xl text-xs font-bold transition-all shadow-sm bg-white flex items-center gap-1.5 cursor-pointer"
+              title={t.logout}>
               <LogOut className="w-3.5 h-3.5" />
-              <span>{t.logout}</span>
+              <span className="hidden sm:inline">{t.logout}</span>
             </button>
           )}
         </div>
@@ -1471,190 +1558,403 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
                 const vueltoIlegal = vuelto > 0.01 && !tieneEfectivo;
 
                 return (
-                  <div className="space-y-6">
-                    {/* Financial Summary */}
-                    <div className="grid grid-cols-2 gap-3 bg-slate-50 border border-slate-200/80 p-4 rounded-xl text-center">
-                      <div className="space-y-0.5 border-r border-slate-200">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{t.total}</span>
-                        <span className="text-sm font-extrabold text-slate-900 font-mono">{formatMoney(totalVenta)}</span>
-                      </div>
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{t.totalReceived}</span>
-                        <span className="text-sm font-extrabold text-slate-850 font-mono">{formatMoney(totalIngresado)}</span>
-                      </div>
+                  <div className="space-y-5">
+                    {/* Selector Condición: Contado vs Crédito */}
+                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setCondicionVenta('contado')}
+                        className={`flex-1 py-2 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
+                          condicionVenta === 'contado'
+                            ? 'bg-white text-slate-900 shadow-2xs'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        {lang === 'es' ? 'Al Contado' : 'Cash / Direct'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCondicionVenta('credito')}
+                        className={`flex-1 py-2 text-xs font-extrabold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                          condicionVenta === 'credito'
+                            ? 'bg-blue-600 text-white shadow-2xs'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <WalletCards className="w-3.5 h-3.5" />
+                        <span>{lang === 'es' ? 'Venta al Crédito' : 'Credit Sale'}</span>
+                      </button>
                     </div>
 
-                    {/* Vuelto / Saldo Banners */}
-                    {totalIngresado < totalVenta ? (
-                      <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-xs flex justify-between items-center shadow-sm">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                          <span className="font-bold">{lang === 'es' ? 'Saldo Restante' : 'Remaining Balance'}</span>
-                        </div>
-                        <span className="font-mono font-extrabold text-sm">{formatMoney(saldoRestante)}</span>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl text-xs flex justify-between items-center shadow-sm">
-                          <div className="flex items-center gap-2">
-                            <span>✓</span>
-                            <span className="font-bold">{lang === 'es' ? 'Pago Completado' : 'Payment Completed'}</span>
-                          </div>
-                          {vuelto > 0 && (
-                            <div className="text-right">
-                              <span className="block text-[9px] font-bold uppercase text-emerald-600">{lang === 'es' ? 'Vuelto' : 'Change'}</span>
-                              <span className="font-mono font-extrabold text-sm">{formatMoney(vuelto)}</span>
+                    {condicionVenta === 'credito' ? (
+                      <div className="space-y-4 animate-in fade-in duration-150">
+                        {/* Validación Cliente Obligatorio */}
+                        {(!checkoutClienteNombre.trim() || checkoutClienteNombre.trim().toLowerCase() === 'cliente general') && (
+                          <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-2.5 shadow-2xs">
+                            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-extrabold block mb-0.5">
+                                {lang === 'es' ? 'Cliente Obligatorio' : 'Customer Required'}
+                              </span>
+                              <span className="text-[11px] text-amber-800 leading-tight block">
+                                {lang === 'es' 
+                                  ? 'Para ventas al crédito es obligatorio registrar el nombre o RUC/DNI del cliente en el buscador superior.' 
+                                  : 'Credit sales require customer name or ID in the search input above.'}
+                              </span>
                             </div>
-                          )}
-                        </div>
-
-                        {vueltoIlegal && (
-                          <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded-xl text-[10px] leading-normal flex items-start gap-2 shadow-sm font-medium">
-                            <span>⚠️</span>
-                            <span>{lang === 'es' ? 'Solo el pago en efectivo permite recibir montos superiores para generar vuelto.' : 'Only cash payments allow overpayment to generate change.'}</span>
                           </div>
                         )}
+
+                        {/* Financial Summary Crédito */}
+                        {(() => {
+                          const initialAmount = Math.max(0, parseFloat(abonoInicialCredito) || 0);
+                          const saldoCredito = Math.max(0, totalVenta - initialAmount);
+                          const cuotaVal = numCuotasCredito > 0 ? (saldoCredito / numCuotasCredito).toFixed(2) : '0.00';
+
+                          return (
+                            <>
+                              <div className="grid grid-cols-2 gap-3 bg-gradient-to-br from-slate-50 to-blue-50/40 border border-blue-100 p-4 rounded-xl text-center">
+                                <div className="space-y-0.5 border-r border-blue-100/80">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{t.total}</span>
+                                  <span className="text-sm font-extrabold text-slate-900 font-mono">{formatMoney(totalVenta)}</span>
+                                </div>
+                                <div className="space-y-0.5">
+                                  <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">
+                                    {lang === 'es' ? 'Saldo a Crédito' : 'Credit Balance'}
+                                  </span>
+                                  <span className="text-sm font-extrabold text-blue-700 font-mono">{formatMoney(saldoCredito)}</span>
+                                </div>
+                              </div>
+
+                              {/* Abono Inicial / Anticipo */}
+                              <div className="space-y-2 bg-white p-3.5 rounded-xl border border-slate-200">
+                                <div className="flex justify-between items-center">
+                                  <label className="text-xs font-bold text-slate-700">
+                                    {lang === 'es' ? 'Abono Inicial / Hoy' : 'Initial Payment Today'}
+                                  </label>
+                                  <span className="text-[10px] text-slate-500 font-bold">
+                                    {initialAmount === 0 
+                                      ? (lang === 'es' ? '100% al crédito (S/ 0 inicial)' : '100% credit (0 down)') 
+                                      : `${formatMoney(initialAmount)}`}
+                                  </span>
+                                </div>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    max={totalVenta}
+                                    value={abonoInicialCredito}
+                                    onChange={(e) => setAbonoInicialCredito(e.target.value)}
+                                    placeholder="0.00"
+                                    className="w-full pl-8 pr-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                  />
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">
+                                    $
+                                  </span>
+                                </div>
+                                <div className="flex gap-1.5 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setAbonoInicialCredito('0')}
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                                      initialAmount === 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                  >
+                                    {lang === 'es' ? 'Sin inicial' : 'No initial'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAbonoInicialCredito((totalVenta * 0.2).toFixed(2))}
+                                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-bold text-slate-600 transition-colors cursor-pointer"
+                                  >
+                                    20%
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAbonoInicialCredito((totalVenta * 0.5).toFixed(2))}
+                                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-bold text-slate-600 transition-colors cursor-pointer"
+                                  >
+                                    50%
+                                  </button>
+                                </div>
+
+                                {initialAmount > 0 && (
+                                  <div className="pt-2 border-t border-slate-100">
+                                    <span className="text-[10px] font-bold text-slate-500 block mb-1">
+                                      {lang === 'es' ? 'Método de cobro inicial (hoy):' : 'Payment method today:'}
+                                    </span>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                      {[
+                                        { id: 'efectivo', label: lang === 'es' ? 'Efectivo' : 'Cash' },
+                                        { id: 'yape_plin', label: 'Yape / Plin' },
+                                        { id: 'tarjeta', label: lang === 'es' ? 'Tarjeta' : 'Card' },
+                                        { id: 'transferencia', label: lang === 'es' ? 'Transferencia' : 'Transfer' },
+                                      ].map((m) => (
+                                        <button
+                                          key={m.id}
+                                          type="button"
+                                          onClick={() => setMetodoAbonoInicial(m.id)}
+                                          className={`py-1.5 px-2 rounded-lg text-[11px] font-bold capitalize transition-all cursor-pointer border ${
+                                            metodoAbonoInicial === m.id
+                                              ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-2xs'
+                                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                                          }`}
+                                        >
+                                          {m.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Configuración de Cuotas */}
+                              <div className="space-y-3 bg-white p-3.5 rounded-xl border border-slate-200">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                    <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                                    <span>{lang === 'es' ? 'Plan de Cuotas' : 'Installment Plan'}</span>
+                                  </label>
+                                  <span className="text-[11px] font-extrabold text-blue-600">
+                                    {numCuotasCredito} {numCuotasCredito === 1 ? (lang === 'es' ? 'cuota' : 'installment') : (lang === 'es' ? 'cuotas' : 'installments')} • ~S/ {cuotaVal} c/u
+                                  </span>
+                                </div>
+
+                                <div className="flex gap-1.5">
+                                  {[1, 2, 3, 4, 6].map((n) => (
+                                    <button
+                                      key={n}
+                                      type="button"
+                                      onClick={() => setNumCuotasCredito(n)}
+                                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                        numCuotasCredito === n
+                                          ? 'bg-blue-600 text-white shadow-2xs'
+                                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                      }`}
+                                    >
+                                      {n}x
+                                    </button>
+                                  ))}
+                                </div>
+
+                                <div className="flex items-center justify-between pt-1">
+                                  <span className="text-[11px] font-bold text-slate-500">
+                                    {lang === 'es' ? 'Vencimiento cada:' : 'Due every:'}
+                                  </span>
+                                  <div className="flex gap-1.5">
+                                    {[
+                                      { d: 15, label: '15 días' },
+                                      { d: 30, label: '30 días' },
+                                      { d: 60, label: '60 días' },
+                                    ].map((opt) => (
+                                      <button
+                                        key={opt.d}
+                                        type="button"
+                                        onClick={() => setDiasVencimientoCredito(opt.d)}
+                                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                          diasVencimientoCredito === opt.d
+                                            ? 'bg-blue-50 border border-blue-400 text-blue-700'
+                                            : 'bg-slate-50 border border-slate-200 text-slate-500 hover:bg-slate-100'
+                                        }`}
+                                      >
+                                        {opt.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
-                    )}
-
-                    {/* Payment Lines */}
-                    <div className="space-y-3">
-                      {pagos.map((pago, index) => (
-                        <div key={index} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm transition-all duration-105">
-                          {/* Method Selector */}
-                          <div className="flex-1 min-w-[100px]">
-                            <select
-                              value={pago.metodo_pago}
-                              onChange={(e) => {
-                                const updated = [...pagos];
-                                updated[index].metodo_pago = e.target.value;
-                                setPagos(updated);
-                              }}
-                              className="w-full px-2.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer capitalize"
-                            >
-                              <option value="">{lang === 'es' ? 'Elegir método...' : 'Select method...'}</option>
-                              {(config?.metodos_pago || ['efectivo', 'tarjeta', 'transferencia']).map((m) => (
-                                <option key={m} value={m}>{m}</option>
-                              ))}
-                            </select>
+                    ) : (
+                      <>
+                        {/* Financial Summary Contado */}
+                        <div className="grid grid-cols-2 gap-3 bg-slate-50 border border-slate-200/80 p-4 rounded-xl text-center">
+                          <div className="space-y-0.5 border-r border-slate-200">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{t.total}</span>
+                            <span className="text-sm font-extrabold text-slate-900 font-mono">{formatMoney(totalVenta)}</span>
                           </div>
-
-                          {/* Amount Input */}
-                          <div className="relative w-28 flex-shrink-0">
-                            <input
-                              type="number"
-                              step="0.01"
-                              placeholder="0.00"
-                              value={pago.monto}
-                              onChange={(e) => {
-                                const updated = [...pagos];
-                                updated[index].monto = e.target.value;
-                                setPagos(updated);
-                              }}
-                              className="w-full pl-3 pr-6 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 text-xs font-mono font-bold text-right"
-                            />
-                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">
-                              $
-                            </span>
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{t.totalReceived}</span>
+                            <span className="text-sm font-extrabold text-slate-850 font-mono">{formatMoney(totalIngresado)}</span>
                           </div>
-
-                          {/* Delete Button */}
-                          {pagos.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPagos(pagos.filter((_, i) => i !== index));
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
                         </div>
-                      ))}
-                    </div>
 
-                    {/* Quick Cash Amounts */}
-                    {pagos.some(p => p.metodo_pago === 'efectivo') && saldoRestante > 0 && (
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-150 space-y-2">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                          {lang === 'es' ? 'Montos rápidos en efectivo' : 'Quick cash amounts'}
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {[10, 20, 50, 100].map((amount) => {
-                            const cashAmount = Math.ceil((totalVenta - (totalIngresado - (pagos.find(p => p.metodo_pago === 'efectivo')?.monto ? parseFloat(pagos.find(p => p.metodo_pago === 'efectivo')!.monto) : 0))) / amount) * amount;
-                            return (
-                              <button key={amount}
+                        {/* Vuelto / Saldo Banners */}
+                        {totalIngresado < totalVenta ? (
+                          <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-xs flex justify-between items-center shadow-sm">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                              <span className="font-bold">{lang === 'es' ? 'Saldo Restante' : 'Remaining Balance'}</span>
+                            </div>
+                            <span className="font-mono font-extrabold text-sm">{formatMoney(saldoRestante)}</span>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl text-xs flex justify-between items-center shadow-sm">
+                              <div className="flex items-center gap-2">
+                                <span>✓</span>
+                                <span className="font-bold">{lang === 'es' ? 'Pago Completado' : 'Payment Completed'}</span>
+                              </div>
+                              {vuelto > 0 && (
+                                <div className="text-right">
+                                  <span className="block text-[9px] font-bold uppercase text-emerald-600">{lang === 'es' ? 'Vuelto' : 'Change'}</span>
+                                  <span className="font-mono font-extrabold text-sm">{formatMoney(vuelto)}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {vueltoIlegal && (
+                              <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded-xl text-[10px] leading-normal flex items-start gap-2 shadow-sm font-medium">
+                                <span>⚠️</span>
+                                <span>{lang === 'es' ? 'Solo el pago en efectivo permite recibir montos superiores para generar vuelto.' : 'Only cash payments allow overpayment to generate change.'}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Payment Lines */}
+                        <div className="space-y-3">
+                          {pagos.map((pago, index) => (
+                            <div key={index} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm transition-all duration-105">
+                              {/* Method Selector */}
+                              <div className="flex-1 min-w-[100px]">
+                                <select
+                                  value={pago.metodo_pago}
+                                  onChange={(e) => {
+                                    const updated = [...pagos];
+                                    updated[index].metodo_pago = e.target.value;
+                                    setPagos(updated);
+                                  }}
+                                  className="w-full px-2.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer capitalize"
+                                >
+                                  <option value="">{lang === 'es' ? 'Elegir método...' : 'Select method...'}</option>
+                                  {(config?.metodos_pago || ['efectivo', 'tarjeta', 'transferencia']).map((m) => (
+                                    <option key={m} value={m}>{m}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Amount Input */}
+                              <div className="relative w-28 flex-shrink-0">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="0.00"
+                                  value={pago.monto}
+                                  onChange={(e) => {
+                                    const updated = [...pagos];
+                                    updated[index].monto = e.target.value;
+                                    setPagos(updated);
+                                  }}
+                                  className="w-full pl-3 pr-6 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 text-xs font-mono font-bold text-right"
+                                />
+                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">
+                                  $
+                                </span>
+                              </div>
+
+                              {/* Delete Button */}
+                              {pagos.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPagos(pagos.filter((_, i) => i !== index));
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Quick Cash Amounts */}
+                        {pagos.some(p => p.metodo_pago === 'efectivo') && saldoRestante > 0 && (
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-150 space-y-2">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                              {lang === 'es' ? 'Montos rápidos en efectivo' : 'Quick cash amounts'}
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {[10, 20, 50, 100].map((amount) => {
+                                const cashAmount = Math.ceil((totalVenta - (totalIngresado - (pagos.find(p => p.metodo_pago === 'efectivo')?.monto ? parseFloat(pagos.find(p => p.metodo_pago === 'efectivo')!.monto) : 0))) / amount) * amount;
+                                return (
+                                  <button key={amount}
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = pagos.map(p => p.metodo_pago === 'efectivo' ? { ...p, monto: Math.max(parseFloat(p.monto) || 0, cashAmount).toFixed(2) } : p);
+                                      setPagos(updated);
+                                    }}
+                                    className="px-3 py-1.5 bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 hover:border-emerald-200 rounded-lg text-[10px] font-extrabold transition-all shadow-sm cursor-pointer"
+                                  >
+                                    {formatMoney(cashAmount)}
+                                  </button>
+                                );
+                              })}
+                              <button
                                 type="button"
                                 onClick={() => {
-                                  const updated = pagos.map(p => p.metodo_pago === 'efectivo' ? { ...p, monto: Math.max(parseFloat(p.monto) || 0, cashAmount).toFixed(2) } : p);
+                                  const updated = pagos.map(p => p.metodo_pago === 'efectivo' ? { ...p, monto: saldoRestante.toFixed(2) } : p);
                                   setPagos(updated);
                                 }}
-                                className="px-3 py-1.5 bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 hover:border-emerald-200 rounded-lg text-[10px] font-extrabold transition-all shadow-sm cursor-pointer"
+                                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-extrabold transition-all shadow-sm cursor-pointer"
                               >
-                                {formatMoney(cashAmount)}
+                                {lang === 'es' ? 'Exacto' : 'Exact'}
                               </button>
-                            );
-                          })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Quick Button Favorites & Add Button */}
+                        <div className="space-y-4 pt-2 border-t border-slate-100">
                           <button
                             type="button"
                             onClick={() => {
-                              const updated = pagos.map(p => p.metodo_pago === 'efectivo' ? { ...p, monto: saldoRestante.toFixed(2) } : p);
+                              const updated = [...pagos];
+                              updated.push({ metodo_pago: '', monto: Math.max(0, saldoRestante).toFixed(2) });
                               setPagos(updated);
                             }}
-                            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-extrabold transition-all shadow-sm cursor-pointer"
+                            className="w-full py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer font-semibold"
                           >
-                            {lang === 'es' ? 'Exacto' : 'Exact'}
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>{t.addPayment}</span>
                           </button>
+
+                          {/* Favorites Quick actions */}
+                          {config?.metodos_pago_favoritos && config.metodos_pago_favoritos.length > 0 && (
+                            <div className="space-y-1.5">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                                {t.paymentMethodsFav}
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {config.metodos_pago_favoritos.map((favMethod) => (
+                                  <button
+                                    key={favMethod}
+                                    type="button"
+                                    onClick={() => {
+                                      const emptyIndex = pagos.findIndex(p => p.metodo_pago === '');
+                                      if (emptyIndex !== -1) {
+                                        const updated = [...pagos];
+                                        updated[emptyIndex] = { metodo_pago: favMethod, monto: saldoRestante.toFixed(2) };
+                                        setPagos(updated);
+                                      } else {
+                                        setPagos([...pagos, { metodo_pago: favMethod, monto: saldoRestante.toFixed(2) }]);
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-200 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all shadow-sm cursor-pointer"
+                                  >
+                                    {favMethod}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
+                      </>
                     )}
-
-                    {/* Quick Button Favorites & Add Button */}
-                    <div className="space-y-4 pt-2 border-t border-slate-100">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const updated = [...pagos];
-                          updated.push({ metodo_pago: '', monto: Math.max(0, saldoRestante).toFixed(2) });
-                          setPagos(updated);
-                        }}
-                        className="w-full py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer font-semibold"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>{t.addPayment}</span>
-                      </button>
-
-                      {/* Favorites Quick actions */}
-                      {config?.metodos_pago_favoritos && config.metodos_pago_favoritos.length > 0 && saldoRestante > 0 && (
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-150 space-y-2">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                            {t.paymentMethodsFav}
-                          </span>
-                          <div className="flex flex-wrap gap-2">
-                            {config.metodos_pago_favoritos.map((favMethod) => (
-                              <button
-                                key={favMethod}
-                                type="button"
-                                onClick={() => {
-                                  const emptyIndex = pagos.findIndex(p => p.metodo_pago === '');
-                                  if (emptyIndex !== -1) {
-                                    const updated = [...pagos];
-                                    updated[emptyIndex] = { metodo_pago: favMethod, monto: saldoRestante.toFixed(2) };
-                                    setPagos(updated);
-                                  } else {
-                                    setPagos([...pagos, { metodo_pago: favMethod, monto: saldoRestante.toFixed(2) }]);
-                                  }
-                                }}
-                                className="px-3 py-1.5 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-200 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all shadow-sm cursor-pointer"
-                              >
-                                {favMethod}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 );
               })()}
@@ -1671,10 +1971,16 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
                 const tieneMetodoVacio = pagos.some(p => p.metodo_pago === '');
                 const pagoCompleto = totalIngresado >= totalVenta && !vueltoIlegal && !tieneMetodoVacio;
 
+                const clienteNombreTrim = checkoutClienteNombre.trim();
+                const clienteValido = clienteNombreTrim.length > 0 && clienteNombreTrim.toLowerCase() !== 'cliente general';
+                const abonoInicialNum = Math.max(0, parseFloat(abonoInicialCredito) || 0);
+                const creditoValido = clienteValido && abonoInicialNum <= totalVenta;
+                const formValido = condicionVenta === 'credito' ? creditoValido : pagoCompleto;
+
                 return (
                   <button
                     type="button"
-                    disabled={!pagoCompleto || processingSale}
+                    disabled={!formValido || processingSale}
                     onClick={submitCheckout}
                     className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-500/10 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
@@ -1682,8 +1988,17 @@ export const POSTerminal: React.FC<POSTerminalProps> = ({
                       <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
                     ) : (
                       <>
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>{t.confirmSale}</span>
+                        {condicionVenta === 'credito' ? (
+                          <>
+                            <WalletCards className="w-4 h-4" />
+                            <span>{lang === 'es' ? 'Confirmar Venta al Crédito' : 'Confirm Credit Sale'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>{t.confirmSale}</span>
+                          </>
+                        )}
                       </>
                     )}
                   </button>

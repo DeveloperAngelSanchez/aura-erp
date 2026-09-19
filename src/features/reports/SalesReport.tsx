@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useResizableColumns } from '../../hooks/useResizableColumns';
 import { supabase } from '../../api/supabaseClient';
 import { useLanguage } from '../../context/LanguageContext';
@@ -16,6 +16,7 @@ import {
   XCircle,
   CheckCircle2,
   User,
+  Utensils,
   ChevronLeft,
   ChevronRight,
   Edit3,
@@ -37,6 +38,10 @@ interface SaleRecord {
   comision_generada: number;
   moneda?: string | null;
   cliente_nombre?: string | null;
+  condicion_venta?: 'contado' | 'credito';
+  estado_pago?: 'pagado' | 'parcial' | 'pendiente';
+  monto_pagado?: number;
+  saldo_pendiente?: number;
 }
 
 const ITEMS_PER_PAGE = 25;
@@ -54,7 +59,8 @@ const translations = {
     cashier: 'Cajero',
     barber: 'Atendido Por',
     itemsDetail: 'Detalle de Compra',
-    method: 'Pago',
+    paymentStatus: 'Pago',
+    method: 'Método',
     cliente: 'Cliente',
     commission: 'Comisión',
     total: 'Total',
@@ -77,19 +83,20 @@ const translations = {
     ticketId: 'Ticket ID',
     date: 'Date',
     cashier: 'Cashier',
-    barber: 'Assigned Barber',
-    itemsDetail: 'Items Purchased',
-    method: 'Payment',
+    barber: 'Staff',
+    itemsDetail: 'Items Detail',
+    paymentStatus: 'Payment',
+    method: 'Method',
     cliente: 'Customer',
     commission: 'Commission',
     total: 'Total',
-    noSales: 'No sales in the selected period.',
+    noSales: 'No sales found in the selected period.',
     loading: 'Loading report...',
     cash: 'Cash',
     card: 'Card',
     transfer: 'Transfer',
-    totalPeriod: 'Total sales for the period',
-    countPeriod: 'Sales in the period',
+    totalPeriod: 'Total sales of the period',
+    countPeriod: 'Sales in period',
     avgTicket: 'Average ticket',
   }
 };
@@ -136,26 +143,27 @@ const methodLabels: Record<string, { es: string; en: string }> = {
   transferencia: { es: 'Transferencia', en: 'Transfer' },
 };
 
-type ReportCol = 'ticket' | 'date' | 'cashier' | 'barber' | 'items' | 'method' | 'cliente' | 'commission' | 'total' | 'actions';
+type ReportCol = 'ticket' | 'date' | 'cashier' | 'barber' | 'items' | 'payment_status' | 'method' | 'cliente' | 'commission' | 'total' | 'actions';
 
 const initialReportColWidths: Record<ReportCol, number> = {
-  ticket: 120,
-  date: 140,
-  cashier: 150,
-  barber: 150,
-  items: 220,
-  method: 110,
-  cliente: 140,
-  commission: 110,
-  total: 110,
-  actions: 80,
+  ticket: 110,
+  date: 130,
+  cashier: 130,
+  barber: 130,
+  items: 200,
+  payment_status: 120,
+  method: 100,
+  cliente: 130,
+  commission: 100,
+  total: 105,
+  actions: 75,
 };
 
 export const SalesReport: React.FC = () => {
   const { profile } = useAuth();
   const { lang } = useLanguage();
   const { formatMoney } = useSettings();
-  const { impersonating, activeBranchIds, rubroConfig } = useEmpresa();
+  const { activeBranchIds, rubroConfig } = useEmpresa();
   const t = translations[lang];
 
   const today = getTodayRange();
@@ -189,7 +197,7 @@ export const SalesReport: React.FC = () => {
       const { data, error } = await supabase
         .from('vista_reporte_ventas')
         .select('*')
-        .in('sucursal_id', impersonating ? activeBranchIds : [profile?.sucursal_id])
+        .in('sucursal_id', activeBranchIds.length > 0 ? activeBranchIds : (profile?.sucursal_id ? [profile.sucursal_id] : []))
         .gte('creado_en', `${from}T00:00:00Z`)
         .lte('creado_en', `${to}T23:59:59Z`)
         .order('creado_en', { ascending: false });
@@ -249,9 +257,17 @@ export const SalesReport: React.FC = () => {
     loadReport(todayRange.start, todayRange.end);
   };
 
+  const [pagoFilter, setPagoFilter] = useState<'todos' | 'contado' | 'credito'>('todos');
+
+  // Filter by payment condition
+  const filteredSales = useMemo(() => {
+    if (pagoFilter === 'todos') return sales;
+    return sales.filter((s) => (s.condicion_venta || 'contado') === pagoFilter);
+  }, [sales, pagoFilter]);
+
   // Pagination slicing
-  const totalPages = Math.ceil(sales.length / ITEMS_PER_PAGE) || 1;
-  const paginatedSales = sales.slice(
+  const totalPages = Math.ceil(filteredSales.length / ITEMS_PER_PAGE) || 1;
+  const paginatedSales = filteredSales.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
@@ -380,14 +396,39 @@ export const SalesReport: React.FC = () => {
       {/* Sales Table with Resizable Columns & Pagination */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col justify-between">
         <div>
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <ArrowUpDown className="w-4 h-4 text-blue-600" />
               {t.tableTitle}
             </h2>
-            <span className="text-[10px] text-slate-400 font-medium">
-              {sales.length} {lang === 'es' ? 'registros en total' : 'total records'}
-            </span>
+            <div className="flex items-center gap-3 self-start sm:self-auto">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                {(['todos', 'contado', 'credito'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => {
+                      setPagoFilter(filter);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold capitalize transition-all cursor-pointer ${
+                      pagoFilter === filter
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {filter === 'todos' 
+                      ? (lang === 'es' ? 'Todos' : 'All')
+                      : filter === 'contado'
+                        ? (lang === 'es' ? 'Pagado' : 'Paid')
+                        : (lang === 'es' ? 'Crédito' : 'Credit')}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium">
+                {filteredSales.length} {lang === 'es' ? 'registros' : 'records'}
+              </span>
+            </div>
           </div>
 
           {loading ? (
@@ -432,6 +473,12 @@ export const SalesReport: React.FC = () => {
                       <div onMouseDown={(e) => handleMouseDown('items', e)} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400/40 z-10" />
                     </th>
 
+                    {/* Estado Pago */}
+                    <th style={{ width: columnWidths.payment_status }} className="relative py-3.5 px-3 whitespace-nowrap group">
+                      <span>{t.paymentStatus}</span>
+                      <div onMouseDown={(e) => handleMouseDown('payment_status', e)} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400/40 z-10" />
+                    </th>
+
                     {/* Método Pago */}
                     <th style={{ width: columnWidths.method }} className="relative py-3.5 px-3 whitespace-nowrap group">
                       <span>{t.method}</span>
@@ -473,7 +520,13 @@ export const SalesReport: React.FC = () => {
                       <td className="px-3 py-3 text-slate-700 font-medium truncate">
                         {sale.barbero_nombre ? (
                           <span className="flex items-center gap-1 truncate">
-                            <Scissors className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                            {rubroConfig.id === 'barberia' ? (
+                              <Scissors className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                            ) : rubroConfig.id === 'restaurante' ? (
+                              <Utensils className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            ) : (
+                              <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                            )}
                             <span className="truncate">{sale.barbero_nombre}</span>
                           </span>
                         ) : (
@@ -482,6 +535,33 @@ export const SalesReport: React.FC = () => {
                       </td>
                       <td className="px-3 py-3 text-slate-600 truncate" title={sale.items_detalle || ''}>
                         {sale.items_detalle || '—'}
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        {sale.condicion_venta === 'credito' ? (
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-extrabold border uppercase tracking-wider ${
+                            sale.estado_pago === 'pagado' || (sale.saldo_pendiente ?? 0) <= 0
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : sale.estado_pago === 'parcial'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-blue-50 text-blue-700 border-blue-200'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              sale.estado_pago === 'pagado' ? 'bg-emerald-500' : sale.estado_pago === 'parcial' ? 'bg-amber-500' : 'bg-blue-500'
+                            }`} />
+                            <span>
+                              {sale.estado_pago === 'pagado'
+                                ? (lang === 'es' ? 'Crédito (Pagado)' : 'Credit (Paid)')
+                                : sale.estado_pago === 'parcial'
+                                  ? (lang === 'es' ? 'Crédito (Parcial)' : 'Credit (Partial)')
+                                  : (lang === 'es' ? 'Crédito' : 'Credit')}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span>{lang === 'es' ? 'Pagado' : 'Paid'}</span>
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <span className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-bold border capitalize ${methodColors[sale.metodo_pago] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>

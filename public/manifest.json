@@ -1,0 +1,27 @@
+{
+  "short_name": "Aura",
+  "name": "Aura ERP - Sistema de Gestión Empresarial y POS",
+  "description": "El sistema de gestión empresarial y punto de venta (POS) en la nube.",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    },
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#F8FAFC",
+  "theme_color": "#2563EB",
+  "display": "standalone",
+  "orientation": "portrait-primary"
+}
